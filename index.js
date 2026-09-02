@@ -182,7 +182,7 @@ function helpEmbed() {
       { name: "💰 Économie", value: "/balance — voir ton argent\n/work — travailler\n/daily — récompense quotidienne\n/deposit montant:<montant> — déposer\n/withdraw montant:<montant> — retirer\n/leaderboard — classement", inline: false },
       { name: "🎰 Jeux", value: "/blackjack mise:<montant> — blackjack\n/hit et /stand — jouer au blackjack\n/coinflip mise:<montant> choix:<pile|face>\n/dice mise:<montant> choix:<1-6>\n/slots mise:<montant>\n/roulette mise:<montant> pari:<rouge|noir|0-36>", inline: false },
       { name: "🕵️ Interaction", value: "/steal membre:<membre> — tenter un vol", inline: false },
-      { name: "🛡️ Administration", value: "/addmoney membre:<membre> montant:<montant>", inline: false }
+      { name: "🛒 Boutique", value: "/shop — voir la boutique\n/buy item:<id> quantité:<nombre> — acheter\n/inventory — voir tes achats", inline: false }
     )
     .setFooter({ text: "Les mises sont retirées avant chaque partie" })
     .setTimestamp();
@@ -290,6 +290,101 @@ async function handleInteraction(interaction) {
 
   if (command === "help") return interaction.reply({ embeds: [helpEmbed()] });
   if (command === "balance") return interaction.reply({ embeds: [balanceEmbed(interaction.user.username, user)] });
+  if (command === 'shop') return interaction.reply({ embeds: [shopEmbed(guildId)] });
+
+  if (command === 'inventory') return interaction.reply({ embeds: [inventoryEmbed(interaction.user.username, user)] });
+
+  if (command === 'buy') {
+    const itemId = normalizeItemId(interaction.options.getString('item'));
+    const quantity = interaction.options.getInteger('quantite');
+    const item = guildData(guildId).shop.items[itemId];
+    if (!item) return interaction.reply({ content: 'Article introuvable. Utilise /shop pour voir les IDs disponibles.', ephemeral: true });
+    if (item.stock !== -1 && item.stock < quantity) return interaction.reply({ content: 'Il ne reste pas assez de stock pour cet article.', ephemeral: true });
+    const total = item.price * quantity;
+    if (!Number.isSafeInteger(total) || total > user.wallet) return interaction.reply({ content: "Tu n'as pas assez de coins dans ton portefeuille.", ephemeral: true });
+    const role = item.roleId ? interaction.guild.roles.cache.get(item.roleId) : null;
+    if (item.roleId && !role) return interaction.reply({ content: "Le rôle associé à cet article n'existe plus.", ephemeral: true });
+    if (role) {
+      try { await interaction.member.roles.add(role); } catch (error) { return interaction.reply({ content: 'Je ne peux pas donner le rôle associé. Vérifie la hiérarchie des rôles.', ephemeral: true }); }
+    }
+    user.wallet -= total;
+    if (item.stock !== -1) item.stock -= quantity;
+    const owned = user.inventory.find(entry => entry.id === itemId);
+    if (owned) owned.quantity += quantity;
+    else user.inventory.push({ id: itemId, name: item.name, quantity, purchasedAt: Date.now() });
+    saveDatabase();
+    return interaction.reply({ content: '✅ Achat confirmé : **' + quantity + ' × ' + item.name + '** pour **' + money(total) + '**.' + (role ? String.fromCharCode(10) + 'Le rôle a été ajouté.' : '') });
+  }
+
+  if (['shop-create', 'shop-edit', 'shop-delete', 'shop-list'].includes(command)) {
+    if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild) && !interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) return interaction.reply({ content: 'Cette commande est réservée aux administrateurs.', ephemeral: true });
+    const shop = guildData(guildId).shop;
+    if (command === 'shop-list') return interaction.reply({ embeds: [shopEmbed(guildId)], ephemeral: true });
+    const itemId = normalizeItemId(interaction.options.getString('id'));
+    if (!itemId) return interaction.reply({ content: 'ID invalide : utilise des lettres, chiffres, tirets ou underscores.', ephemeral: true });
+    if (command === 'shop-delete') {
+      if (!shop.items[itemId]) return interaction.reply({ content: 'Article introuvable.', ephemeral: true });
+      delete shop.items[itemId];
+      saveDatabase();
+      return interaction.reply({ content: '🗑️ Article **' + itemId + '** supprimé.' });
+    }
+    if (command === 'shop-create') {
+      if (shop.items[itemId]) return interaction.reply({ content: 'Cet ID existe déjà. Utilise /shop-edit pour le modifier.', ephemeral: true });
+      const role = interaction.options.getRole('role');
+      const stock = parseStock(interaction.options.getString('stock'), -1);
+      if (stock === null) return interaction.reply({ content: 'Stock invalide. Mets un nombre, 0 ou illimite.', ephemeral: true });
+      shop.items[itemId] = { id: itemId, name: interaction.options.getString('nom'), price: interaction.options.getInteger('prix'), description: interaction.options.getString('description'), stock, roleId: role?.id || null };
+      saveDatabase();
+      return interaction.reply({ content: '✅ Article **' + itemId + '** ajouté à la boutique.' });
+    }
+    const item = shop.items[itemId];
+    if (!item) return interaction.reply({ content: 'Article introuvable.', ephemeral: true });
+    const name = interaction.options.getString('nom');
+    const price = interaction.options.getInteger('prix');
+    const description = interaction.options.getString('description');
+    const stockInput = interaction.options.getString('stock');
+    const role = interaction.options.getRole('role');
+    const stock = parseStock(stockInput, item.stock);
+    if (stock === null) return interaction.reply({ content: 'Stock invalide. Mets un nombre, 0 ou illimite.', ephemeral: true });
+    if (name) item.name = name;
+    if (price !== null) item.price = price;
+    if (description) item.description = description;
+    if (stockInput !== null) item.stock = stock;
+    if (role) item.roleId = role.id;
+    saveDatabase();
+    return interaction.reply({ content: '✏️ Article **' + itemId + '** modifié.' });
+  }
+
+  if (command === 'rps') {
+    const bet = interaction.options.getInteger('mise');
+    const pick = normalizeChoice(interaction.options.getString('choix'));
+    if (bet > user.wallet) return interaction.reply({ content: "Tu n'as pas assez de coins dans ton portefeuille.", ephemeral: true });
+    const choices = ['pierre', 'papier', 'ciseaux'];
+    const botPick = choices[randomInt(0, 2)];
+    const win = pick === 'pierre' && botPick === 'ciseaux' || pick === 'papier' && botPick === 'pierre' || pick === 'ciseaux' && botPick === 'papier';
+    user.wallet -= bet;
+    if (pick === botPick) user.wallet += bet;
+    else if (win) user.wallet += bet * 2;
+    saveDatabase();
+    return interaction.reply({ content: '✊ Tu as choisi **' + pick + '**, le bot a choisi **' + botPick + '**. ' + (pick === botPick ? 'Égalité, mise remboursée.' : win ? 'Tu gagnes **' + money(bet * 2) + '** !' : 'Tu perds ta mise.') });
+  }
+
+  if (command === 'higherlower') {
+    const bet = interaction.options.getInteger('mise');
+    const pick = normalizeChoice(interaction.options.getString('choix'));
+    if (bet > user.wallet) return interaction.reply({ content: "Tu n'as pas assez de coins dans ton portefeuille.", ephemeral: true });
+    const first = randomInt(1, 13);
+    const next = randomInt(1, 13);
+    user.wallet -= bet;
+    const win = pick === 'haut' && next > first || pick === 'bas' && next < first;
+    const tie = next === first;
+    const payout = tie ? bet : win ? bet * 2 : 0;
+    user.wallet += payout;
+    saveDatabase();
+    return interaction.reply({ content: '🃏 Carte : **' + first + '** → suivante : **' + next + '**. ' + (tie ? 'Égalité, mise remboursée.' : win ? 'Bien vu ! Tu gagnes **' + money(payout) + '**.' : 'Raté, ta mise est perdue.') });
+  }
+
+
 
   if (command === "work") {
     const availableAt = user.lastWork + WORK_COOLDOWN;
