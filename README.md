@@ -1,57 +1,41 @@
 # Hirosaki Game
 
 Bot Discord de jeu et d'économie avec commandes slash.
-Les commandes sont séparées du bot Hirosaki de gestion et apparaissent dans le menu Discord.
 
 ## Installation
 
 1. Installer Node.js 18.17 ou plus récent.
-2. Installer les dépendances avec : npm install
-3. Ajouter DISCORD_TOKEN dans les variables d'environnement du serveur.
-4. Ajouter GUILD_ID avec l'identifiant du serveur pour enregistrer les commandes immédiatement pendant les tests.
+2. Installer les dépendances avec : `npm install`
+3. Ajouter `DISCORD_TOKEN` dans les variables d'environnement du serveur.
+4. Ajouter `GUILD_ID` pour enregistrer les commandes immédiatement pendant les tests.
 5. Activer Message Content Intent dans le portail développeur Discord.
-6. Démarrer avec : npm start
+6. Démarrer avec : `npm start`
 
-## Commandes joueurs
+## Boutique personnalisable
 
-/help — afficher l'aide dans un embed
-/balance — voir le portefeuille et la banque
-/work — travailler avec un cooldown de 45 secondes
-/daily — récompense quotidienne avec cooldown de 24 heures
-/deposit montant:<montant|all> — déposer à la banque
-/withdraw montant:<montant|all> — retirer de la banque
-/leaderboard — afficher le classement dans un embed
-/steal membre:<membre> — tenter de voler le portefeuille d'un membre
-/shop — afficher la boutique
-/buy item:<id> quantite:<nombre> — acheter un article
-/inventory — voir ses achats
+Les administrateurs peuvent tout gérer directement depuis Discord :
 
-## Jeux
+- `/shop-create id nom prix description [stock] [emoji] [categorie] [role]` : créer un article.
+- `/shop-edit id [nom] [prix] [description] [stock] [emoji] [categorie] [role] [retirer-role]` : modifier un article.
+- `/shop-delete id` : supprimer un article.
+- `/shop-list` : afficher la boutique en aperçu admin.
+- `/shop-config [titre] [description] [couleur] [pied] [reinitialiser]` : personnaliser son apparence.
+- `/shop` : afficher la boutique aux joueurs.
+- `/buy item quantité` : acheter un article.
+- `/inventory` : voir ses achats.
 
-/blackjack mise:<montant>, puis /hit ou /stand
-/coinflip mise:<montant> choix:<pile|face>
-/dice mise:<montant> choix:<1-6>
-/slots mise:<montant>
-/roulette mise:<montant> pari:<rouge|noir|0-36>
-/rps mise:<montant> choix:<pierre|papier|ciseaux>
-/higherlower mise:<montant> choix:<haut|bas>
+Le stock vide ou `illimite` signifie illimité. Un rôle associé est automatiquement donné lors de l'achat. La boutique est séparée par catégories et affiche les emojis personnalisés.
 
-## Gestion de la boutique
+## Jeux classiques
 
-Ces commandes sont réservées aux administrateurs ou aux membres ayant la permission Gérer le serveur :
-/shop-create id:<id> nom:<nom> prix:<prix> description:<description> [stock] [role]
-/shop-edit id:<id> [nom] [prix] [description] [stock] [role]
-/shop-delete id:<id>
-/shop-list
+- `/craps mise pari:<pass|dontpass>` : craps classique avec premier lancer, point, 7 et remboursement Don’t Pass sur 12.
+- `/blackjack mise`, puis `/hit`, `/stand`, `/split` ou `/double`.
+- `/coinflip`, `/dice`, `/roulette`, `/slots`, `/rps` et `/higherlower`.
 
-Un stock vide ou la valeur illimite signifie que l'article est disponible sans limite. Un rôle associé est automatiquement donné lors de l'achat.
+## Économie
 
-## Administration
-
-/addmoney membre:<membre> montant:<montant>
+`/help`, `/balance`, `/work`, `/daily`, `/deposit`, `/withdraw`, `/leaderboard`, `/steal` et `/addmoney`.
 
 ## Données et déploiement
 
-Commande de démarrage : npm start
-Les données sont sauvegardées dans data/economy.json. Pour une économie durable, utiliser un volume persistant ou PostgreSQL.
-Ne commite jamais le vrai token Discord.
+Les données sont sauvegardées dans `data/economy.json`. Pour une économie durable, utiliser un volume persistant ou PostgreSQL. Ne commite jamais le vrai token Discord.
