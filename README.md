@@ -28,7 +28,7 @@ Le stock vide ou `illimite` signifie illimité. Un rôle associé est automatiqu
 
 ## Jeux classiques
 
-- `/craps mise pari:<pass|dontpass>` : craps classique avec premier lancer, point, 7 et remboursement Don’t Pass sur 12.
+- `/craps mise` : 7 ou 11 au premier tir = gain x2 ; 2, 3 ou 12 = perte ; un point donne 3 lancers pour gagner x4, sinon la mise est remboursée.
 - `/blackjack mise`, puis `/hit`, `/stand`, `/split` ou `/double`.
 - `/coinflip`, `/dice`, `/roulette`, `/slots`, `/rps` et `/higherlower`.
 
