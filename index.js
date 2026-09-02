@@ -1,5 +1,6 @@
 const {
   Client,
+  EmbedBuilder,
   GatewayIntentBits,
   PermissionsBitField,
   ActivityType
@@ -209,44 +210,34 @@ function playBlackjackStand(message) {
   settleBlackjack(message.guild.id, message.author.id, result, message);
 }
 
-function helpText() {
-  return [
-    "**🎮 Hirosaki Game — commandes**",
-    "",
-    "**Économie**",
-    "+balance — voir ton portefeuille et ta banque",
-    "+work — travailler avec un cooldown",
-    "+daily — récupérer ta récompense quotidienne",
-    "+deposit <montant|all> — déposer à la banque",
-    "+withdraw <montant|all> — retirer de la banque",
-    "+leaderboard — classement des fortunes",
-    "",
-    "**Jeux**",
-    "+blackjack <mise> puis +hit ou +stand",
-    "+coinflip <mise> <pile|face>",
-    "+dice <mise> <1-6>",
-    "+slots <mise>",
-    "+roulette <mise> <rouge|noir|0-36>",
-    "",
-    "**Interaction**",
-    "+steal @membre — tenter de voler son portefeuille",
-    "",
-    "**Administration**",
-    "+addmoney @membre <montant> — ajouter des coins",
-    "",
-    "Les mises sont retirées avant chaque partie. Joue de façon responsable."
-  ].join("\n");
+function helpEmbed() {
+  return new EmbedBuilder()
+    .setColor(0x7c3aed)
+    .setTitle("🎮 Hirosaki Game")
+    .setDescription("Le bot de jeu et d'économie du serveur.\nToutes les commandes commencent par +ec.")
+    .addFields(
+      { name: "💰 Économie", value: "+ec balance — voir ton argent\n+ec work — travailler\n+ec daily — récompense quotidienne\n+ec deposit <montant> — déposer\n+ec withdraw <montant> — retirer\n+ec leaderboard — classement", inline: false },
+      { name: "🎰 Jeux", value: "+ec blackjack <mise> — blackjack\n+ec hit / +ec stand — jouer au blackjack\n+ec coinflip <mise> <pile|face>\n+ec dice <mise> <1-6>\n+ec slots <mise>\n+ec roulette <mise> <rouge|noir|0-36>", inline: false },
+      { name: "🕵️ Interaction", value: "+ec steal @membre — tenter un vol", inline: false },
+      { name: "🛡️ Administration", value: "+ec addmoney @membre <montant>", inline: false }
+    )
+    .setFooter({ text: "Préfixe : +ec • Les mises sont retirées avant chaque partie" })
+    .setTimestamp();
 }
 
 async function handleCommand(message) {
   const parts = message.content.slice(PREFIX.length).trim().split(/\s+/);
-  const command = choice(parts.shift());
+  const first = choice(parts.shift());
+  const shortcut = { "help-ec": "help", "echelp": "help", "leaderboard-ec": "leaderboard", "ecleaderboard": "leaderboard" }[first];
+  const namespaced = ["ec", "eco", "economie", "casino"].includes(first);
+  if (!namespaced && !shortcut) return;
+  const command = shortcut || choice(namespaced ? parts.shift() : first);
   if (!command) return;
   const guildId = message.guild.id;
   const userId = message.author.id;
   const user = userData(guildId, userId);
 
-  if (command === "help" || command === "aide") return message.reply(helpText());
+  if (command === "help" || command === "aide") return message.reply({ embeds: [helpEmbed()] });
 
   if (["balance", "bal", "money"].includes(command)) {
     return message.reply("💰 **" + message.author.username + "**\n" + accountLine(user));
@@ -293,9 +284,20 @@ async function handleCommand(message) {
   if (["leaderboard", "classement", "rich"].includes(command)) {
     const guild = guildData(guildId);
     const rows = Object.entries(guild.users).map(([id, value]) => ({ id, total: totalBalance(value) })).sort((a, b) => b.total - a.total).slice(0, 10);
-    if (!rows.length) return message.reply("Le classement est encore vide.");
-    const lines = rows.map((row, index) => (index + 1) + ". <@" + row.id + "> — **" + money(row.total) + "**");
-    return message.reply("🏆 **Classement des fortunes**\n" + lines.join("\n"));
+    const embed = new EmbedBuilder()
+      .setColor(0xf59e0b)
+      .setTitle("🏆 Classement Hirosaki Game")
+      .setDescription("Les joueurs les plus riches de ce serveur")
+      .setFooter({ text: "Utilise +ec balance pour consulter ton compte" })
+      .setTimestamp();
+    if (!rows.length) {
+      embed.setDescription("Le classement est encore vide. Commence avec +ec work !");
+      return message.reply({ embeds: [embed] });
+    }
+    const medals = ["🥇", "🥈", "🥉"];
+    const lines = rows.map((row, index) => (medals[index] || "▫️") + " **#" + (index + 1) + "** <@" + row.id + ">\n　💰 " + money(row.total));
+    embed.addFields({ name: "Top 10", value: lines.join("\n") });
+    return message.reply({ embeds: [embed] });
   }
 
   if (command === "steal" || command === "vol") {
