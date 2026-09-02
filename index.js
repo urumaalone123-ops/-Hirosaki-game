@@ -63,6 +63,8 @@ function guildData(guildId) {
   if (!db.guilds[guildId]) db.guilds[guildId] = { users: {}, blackjack: {} };
   if (!db.guilds[guildId].users) db.guilds[guildId].users = {};
   if (!db.guilds[guildId].blackjack) db.guilds[guildId].blackjack = {};
+  if (!db.guilds[guildId].shop) db.guilds[guildId].shop = { items: {} };
+  if (!db.guilds[guildId].shop.items) db.guilds[guildId].shop.items = {};
   return db.guilds[guildId];
 }
 
@@ -70,6 +72,7 @@ function userData(guildId, userId) {
   const guild = guildData(guildId);
   if (!guild.users[userId]) guild.users[userId] = { wallet: 100, bank: 0, lastDaily: 0, lastWork: 0, lastSteal: 0 };
   const user = guild.users[userId];
+  if (!Array.isArray(user.inventory)) user.inventory = [];
   user.wallet = Number.isFinite(user.wallet) ? Math.max(0, Math.floor(user.wallet)) : 0;
   user.bank = Number.isFinite(user.bank) ? Math.max(0, Math.floor(user.bank)) : 0;
   return user;
@@ -198,6 +201,41 @@ function leaderboardEmbed(guildId) {
   const medals = ["🥇", "🥈", "🥉"];
   const lines = rows.map((row, index) => (medals[index] || "▫️") + " **#" + (index + 1) + "** <@" + row.id + ">\n　💰 " + money(row.total));
   return embed.addFields({ name: "Top 10", value: lines.join("\n") });
+}
+
+function normalizeItemId(value) {
+  const raw = String(value || '').toLowerCase().trim();
+  return raw.replace(/[^a-z0-9_-]/g, '').slice(0, 20);
+}
+
+function parseStock(value, fallback) {
+  if (value === null || value === undefined || value === '') return fallback;
+  const normalized = normalizeChoice(value);
+  if (normalized === 'illimite' || normalized === 'infinite' || normalized === 'unlimited') return -1;
+  const stock = Number(value);
+  return Number.isSafeInteger(stock) && stock >= 0 ? stock : null;
+}
+
+function shopEmbed(guildId) {
+  const guild = guildData(guildId);
+  const items = Object.values(guild.shop.items);
+  const embed = new EmbedBuilder().setColor(0x06b6d4).setTitle('🛒 Boutique Hirosaki').setDescription("Achète des objets avec l'argent de ton portefeuille. Utilise /buy pour acheter.").setFooter({ text: 'Les articles sont configurés directement sur Discord' }).setTimestamp();
+  if (!items.length) return embed.setDescription('La boutique est vide pour le moment.');
+  const lines = items.slice(0, 25).map(item => {
+    const stock = item.stock === -1 ? '∞' : String(item.stock);
+    const role = item.roleId ? ' • rôle inclus' : '';
+    return '🛍️ **' + item.name + '** — **' + money(item.price) + '**\nID : ' + item.id + ' • Stock : ' + stock + role + '\n' + item.description;
+  });
+  return embed.setDescription(lines.join(String.fromCharCode(10) + String.fromCharCode(10)));
+}
+
+function inventoryEmbed(username, user) {
+  const embed = new EmbedBuilder().setColor(0x8b5cf6).setTitle('🎒 Inventaire de ' + username).setTimestamp();
+  if (!user.inventory.length) return embed.setDescription('Ton inventaire est vide. Consulte /shop pour voir les articles.');
+  const counts = {};
+  for (const item of user.inventory) counts[item.id] = (counts[item.id] || 0) + (item.quantity || 1);
+  const lines = Object.entries(counts).map(([id, quantity]) => '• **' + id + '** × ' + quantity);
+  return embed.setDescription(lines.join(String.fromCharCode(10)));
 }
 
 function commandBuilders() {
