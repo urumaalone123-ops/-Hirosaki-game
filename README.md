@@ -36,6 +36,6 @@ Le stock vide ou `illimite` signifie illimité. Un rôle associé est automatiqu
 
 `/help`, `/balance`, `/work`, `/daily`, `/deposit`, `/withdraw`, `/leaderboard`, `/steal` et `/addmoney`.
 
-## Règles des jeux\n\nLa commande `/rules jeu:<jeu>` affiche les règles détaillées et les gains possibles pour chaque jeu.\n\nDes raccourcis sont également disponibles : `/blackjack-rules`, `/craps-rules`, `/coinflip-rules`, `/dice-rules`, `/slots-rules`, `/roulette-rules`, `/rps-rules` et `/higherlower-rules`.\n## Données et déploiement
+## Règles des jeux\n\nLa commande `/rules jeu:<jeu>` affiche les règles détaillées et les gains possibles pour chaque jeu.\n\nDes raccourcis sont également disponibles : `/blackjack-rules`, `/craps-rules`, `/coinflip-rules`, `/dice-rules`, `/slots-rules`, `/roulette-rules`, `/rps-rules`, `/higherlower-rules` et `/hilo-rules`.\n\nHilo se joue avec `/hilo mise`, puis `/hilo-guess choix:<plus|moins>`. La cote augmente selon la probabilité restante (x1,5, x2 ou x2,5), est plafonnée à x10 et peut être encaissée avec `/hilo-cashout`. L As est la carte la plus basse ; une carte de même valeur fait perdre la mise.\n## Données et déploiement
 
 Les données sont sauvegardées dans `data/economy.json`. Pour une économie durable, utiliser un volume persistant ou PostgreSQL. Ne commite jamais le vrai token Discord.
