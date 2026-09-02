@@ -195,7 +195,7 @@ function helpEmbed() {
     .setDescription("Le bot de jeu et d'économie du serveur.\nLes commandes sont disponibles dans le menu slash Discord.")
     .addFields(
       { name: "💰 Économie", value: "/balance — voir ton argent\n/work — travailler\n/daily — récompense quotidienne\n/deposit montant:<montant> — déposer\n/withdraw montant:<montant> — retirer\n/leaderboard — classement", inline: false },
-      { name: "🎰 Jeux", value: "/blackjack mise:<montant> — blackjack\n/hit, /stand, /split et /double\n/craps mise:<montant>\n/coinflip mise:<montant> choix:<pile|face>\n/dice mise:<montant> choix:<1-6>\n/slots mise:<montant>\n/roulette mise:<montant> pari:<rouge|noir|0-36>", inline: false },
+      { name: "🎰 Jeux", value: "/blackjack mise:<montant> — blackjack\n/hit, /stand, /split et /double\n/craps mise:<montant>\n/coinflip mise:<montant> choix:<pile|face>\n/dice mise:<montant> choix:<1-6>\n/slots mise:<montant>\n/roulette mise:<montant> pari:<rouge|noir|0-36>\n/rules jeu:<jeu> — règles détaillées", inline: false },
       { name: "🕵️ Interaction", value: "/steal membre:<membre> — tenter un vol", inline: false },
       { name: "🛒 Boutique", value: "/shop — voir la boutique\n/buy item:<id> quantité:<nombre> — acheter\n/inventory — voir tes achats\n\nAdmin : /shop-create, /shop-edit, /shop-delete, /shop-list, /shop-config", inline: false }
     )
@@ -277,6 +277,72 @@ function inventoryEmbed(username, user) {
   return embed.setDescription(lines.join(String.fromCharCode(10)));
 }
 
+const GAME_RULES = {
+  blackjack: {
+    title: '🃏 Règles du Blackjack',
+    description: 'Bats le croupier en approchant 21 sans le dépasser.',
+    commands: '`/blackjack mise`, `/hit`, `/stand`, `/split`, `/double`',
+    details: 'Les figures valent 10, l As vaut 1 ou 11. Le croupier tire jusqu à 17. Un blackjack naturel paie x2,5, une victoire normale paie x2 et une égalité rembourse la mise. /split est possible avec deux cartes de même rang ; /double double la mise et tire une seule carte.'
+  },
+  craps: {
+    title: '🎰 Règles du Craps',
+    description: 'Lance les dés et tente de refaire ton point.',
+    commands: '`/craps mise`',
+    details: 'Au premier tir, 7 ou 11 donne un gain x2. 2, 3 ou 12 fait perdre la mise. Avec 4, 5, 6, 8, 9 ou 10, ce nombre devient le point : tu as 3 lancers supplémentaires pour le refaire. Le point donne x4, un 7 fait perdre et tout autre résultat après 3 lancers rembourse la mise.'
+  },
+  coinflip: {
+    title: '🪙 Règles de Pile ou Face',
+    description: 'Choisis pile ou face avant le lancer.',
+    commands: '`/coinflip mise choix:<pile|face>`',
+    details: 'Si ton choix sort, tu récupères x2 ta mise. Sinon, la mise est perdue.'
+  },
+  dice: {
+    title: '🎲 Règles du Dé',
+    description: 'Choisis un nombre de 1 à 6.',
+    commands: '`/dice mise choix:<1-6>`',
+    details: 'Si le dé affiche ton nombre, tu récupères x6 ta mise. Sinon, elle est perdue.'
+  },
+  slots: {
+    title: '🎰 Règles des Machines à sous',
+    description: 'Lance trois symboles et cherche une combinaison.',
+    commands: '`/slots mise`',
+    details: 'Deux symboles identiques paient x2. Trois cerises paient x5, trois citrons x6, trois cloches x8, trois étoiles x10, trois diamants x15 et trois 7 x25.'
+  },
+  roulette: {
+    title: '🎡 Règles de la Roulette',
+    description: 'Parie sur une couleur ou un numéro de 0 à 36.',
+    commands: '`/roulette mise pari:<rouge|noir|0-36>`',
+    details: 'Un pari rouge ou noir gagne x2. Un numéro exact gagne x36. Le 0 est vert et fait perdre les paris de couleur.'
+  },
+  rps: {
+    title: '✊ Règles de Pierre-Papier-Ciseaux',
+    description: 'Choisis pierre, papier ou ciseaux contre le bot.',
+    commands: '`/rps mise choix:<pierre|papier|ciseaux>`',
+    details: 'Pierre bat ciseaux, ciseaux bat papier et papier bat pierre. Une victoire paie x2, une égalité rembourse la mise et une défaite la fait perdre.'
+  },
+  higherlower: {
+    title: '🃏 Règles de Plus haut ou Plus bas',
+    description: 'Devine si la prochaine carte sera plus haute ou plus basse.',
+    commands: '`/higherlower mise choix:<haut|bas>`',
+    details: 'Une bonne prédiction paie x2. Si les deux cartes ont la même valeur, la mise est remboursée. Une mauvaise prédiction fait perdre la mise.'
+  }
+};
+
+function rulesEmbed(game) {
+  const rules = GAME_RULES[game];
+  if (!rules) return new EmbedBuilder().setColor(0xef4444).setTitle('Règles introuvables');
+  return new EmbedBuilder()
+    .setColor(0x7c3aed)
+    .setTitle(rules.title)
+    .setDescription(rules.description)
+    .addFields(
+      { name: '🎮 Commande', value: rules.commands, inline: false },
+      { name: '📖 Comment jouer', value: rules.details, inline: false }
+    )
+    .setFooter({ text: 'Les mises sont retirées du portefeuille avant chaque partie.' })
+    .setTimestamp();
+}
+
 function commandBuilders() {
   const amountOption = option => option.setName("montant").setDescription("Montant ou all").setRequired(true);
   const manageShop = command => command.setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild);
@@ -284,6 +350,15 @@ function commandBuilders() {
     new SlashCommandBuilder().setName("shop").setDescription("Afficher la boutique du serveur"),
     new SlashCommandBuilder().setName("buy").setDescription("Acheter un article").addStringOption(option => option.setName("item").setDescription("ID de l article").setRequired(true)).addIntegerOption(option => option.setName("quantite").setDescription("Quantité").setMinValue(1).setMaxValue(99).setRequired(true)),
     new SlashCommandBuilder().setName("inventory").setDescription("Voir ton inventaire"),
+    new SlashCommandBuilder().setName("rules").setDescription("Afficher les règles d un jeu").addStringOption(option => option.setName("jeu").setDescription("Jeu à expliquer").addChoices({ name: "Blackjack", value: "blackjack" }, { name: "Craps", value: "craps" }, { name: "Pile ou face", value: "coinflip" }, { name: "Dé", value: "dice" }, { name: "Machines à sous", value: "slots" }, { name: "Roulette", value: "roulette" }, { name: "Pierre-papier-ciseaux", value: "rps" }, { name: "Plus haut ou plus bas", value: "higherlower" }).setRequired(true)),
+    new SlashCommandBuilder().setName("blackjack-rules").setDescription("Afficher les règles du blackjack"),
+    new SlashCommandBuilder().setName("craps-rules").setDescription("Afficher les règles du craps"),
+    new SlashCommandBuilder().setName("coinflip-rules").setDescription("Afficher les règles de pile ou face"),
+    new SlashCommandBuilder().setName("dice-rules").setDescription("Afficher les règles du dé"),
+    new SlashCommandBuilder().setName("slots-rules").setDescription("Afficher les règles des machines à sous"),
+    new SlashCommandBuilder().setName("roulette-rules").setDescription("Afficher les règles de la roulette"),
+    new SlashCommandBuilder().setName("rps-rules").setDescription("Afficher les règles de pierre-papier-ciseaux"),
+    new SlashCommandBuilder().setName("higherlower-rules").setDescription("Afficher les règles de plus haut ou plus bas"),
     manageShop(new SlashCommandBuilder().setName("shop-create").setDescription("Créer un article").addStringOption(option => option.setName("id").setDescription("ID court sans espace").setMaxLength(20).setRequired(true)).addStringOption(option => option.setName("nom").setDescription("Nom affiché").setMaxLength(80).setRequired(true)).addIntegerOption(option => option.setName("prix").setDescription("Prix en coins").setMinValue(1).setRequired(true)).addStringOption(option => option.setName("description").setDescription("Description").setMaxLength(200).setRequired(true)).addStringOption(option => option.setName("stock").setDescription("Nombre ou illimite").setRequired(false)).addStringOption(option => option.setName("emoji").setDescription("Emoji affiché").setMaxLength(32).setRequired(false)).addStringOption(option => option.setName("categorie").setDescription("Catégorie").setMaxLength(40).setRequired(false)).addRoleOption(option => option.setName("role").setDescription("Rôle donné à l achat").setRequired(false))),
     manageShop(new SlashCommandBuilder().setName("shop-edit").setDescription("Modifier un article").addStringOption(option => option.setName("id").setDescription("ID de l article").setMaxLength(20).setRequired(true)).addStringOption(option => option.setName("nom").setDescription("Nouveau nom").setMaxLength(80).setRequired(false)).addIntegerOption(option => option.setName("prix").setDescription("Nouveau prix").setMinValue(1).setRequired(false)).addStringOption(option => option.setName("description").setDescription("Nouvelle description").setMaxLength(200).setRequired(false)).addStringOption(option => option.setName("stock").setDescription("Nombre ou illimite").setRequired(false)).addStringOption(option => option.setName("emoji").setDescription("Nouvel emoji").setMaxLength(32).setRequired(false)).addStringOption(option => option.setName("categorie").setDescription("Nouvelle catégorie").setMaxLength(40).setRequired(false)).addRoleOption(option => option.setName("role").setDescription("Nouveau rôle").setRequired(false)).addBooleanOption(option => option.setName("retirer-role").setDescription("Retirer le rôle associé").setRequired(false))),
     manageShop(new SlashCommandBuilder().setName("shop-delete").setDescription("Supprimer un article").addStringOption(option => option.setName("id").setDescription("ID de l article").setMaxLength(20).setRequired(true))),
@@ -376,6 +451,9 @@ async function handleInteraction(interaction) {
 
   if (command === "help") return interaction.reply({ embeds: [helpEmbed()] });
   if (command === "balance") return interaction.reply({ embeds: [balanceEmbed(interaction.user.username, user)] });
+  const ruleAliases = { "blackjack-rules": "blackjack", "craps-rules": "craps", "coinflip-rules": "coinflip", "dice-rules": "dice", "slots-rules": "slots", "roulette-rules": "roulette", "rps-rules": "rps", "higherlower-rules": "higherlower" };
+  if (command === "rules") return interaction.reply({ embeds: [rulesEmbed(interaction.options.getString("jeu"))] });
+  if (ruleAliases[command]) return interaction.reply({ embeds: [rulesEmbed(ruleAliases[command])] });
   if (command === 'shop') return interaction.reply({ embeds: [shopEmbed(guildId)] });
 
   if (command === 'inventory') return interaction.reply({ embeds: [inventoryEmbed(interaction.user.username, user)] });
