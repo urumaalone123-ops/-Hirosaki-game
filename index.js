@@ -59,12 +59,27 @@ function saveDatabase() {
   }, 250);
 }
 
+function defaultShopSettings() {
+  return {
+    title: "🛒 Boutique Hirosaki",
+    description: "Achète des objets avec l'argent de ton portefeuille.",
+    color: 0x06b6d4,
+    footer: "Les articles sont configurés directement sur Discord"
+  };
+}
+
 function guildData(guildId) {
   if (!db.guilds[guildId]) db.guilds[guildId] = { users: {}, blackjack: {} };
   if (!db.guilds[guildId].users) db.guilds[guildId].users = {};
   if (!db.guilds[guildId].blackjack) db.guilds[guildId].blackjack = {};
-  if (!db.guilds[guildId].shop) db.guilds[guildId].shop = { items: {} };
-  if (!db.guilds[guildId].shop.items) db.guilds[guildId].shop.items = {};
+  if (!db.guilds[guildId].shop) db.guilds[guildId].shop = { ...defaultShopSettings(), items: {} };
+  const shop = db.guilds[guildId].shop;
+  if (!shop.items) shop.items = {};
+  const defaults = defaultShopSettings();
+  if (!shop.title) shop.title = defaults.title;
+  if (!shop.description) shop.description = defaults.description;
+  if (!Number.isInteger(shop.color)) shop.color = defaults.color;
+  if (!shop.footer) shop.footer = defaults.footer;
   return db.guilds[guildId];
 }
 
@@ -180,9 +195,9 @@ function helpEmbed() {
     .setDescription("Le bot de jeu et d'économie du serveur.\nLes commandes sont disponibles dans le menu slash Discord.")
     .addFields(
       { name: "💰 Économie", value: "/balance — voir ton argent\n/work — travailler\n/daily — récompense quotidienne\n/deposit montant:<montant> — déposer\n/withdraw montant:<montant> — retirer\n/leaderboard — classement", inline: false },
-      { name: "🎰 Jeux", value: "/blackjack mise:<montant> — blackjack\n/hit et /stand — jouer au blackjack\n/coinflip mise:<montant> choix:<pile|face>\n/dice mise:<montant> choix:<1-6>\n/slots mise:<montant>\n/roulette mise:<montant> pari:<rouge|noir|0-36>", inline: false },
+      { name: "🎰 Jeux", value: "/blackjack mise:<montant> — blackjack\n/hit, /stand, /split et /double\n/craps mise:<montant> pari:<pass|dontpass>\n/coinflip mise:<montant> choix:<pile|face>\n/dice mise:<montant> choix:<1-6>\n/slots mise:<montant>\n/roulette mise:<montant> pari:<rouge|noir|0-36>", inline: false },
       { name: "🕵️ Interaction", value: "/steal membre:<membre> — tenter un vol", inline: false },
-      { name: "🛒 Boutique", value: "/shop — voir la boutique\n/buy item:<id> quantité:<nombre> — acheter\n/inventory — voir tes achats", inline: false }
+      { name: "🛒 Boutique", value: "/shop — voir la boutique\n/buy item:<id> quantité:<nombre> — acheter\n/inventory — voir tes achats\n\nAdmin : /shop-create, /shop-edit, /shop-delete, /shop-list, /shop-config", inline: false }
     )
     .setFooter({ text: "Les mises sont retirées avant chaque partie" })
     .setTimestamp();
@@ -216,17 +231,41 @@ function parseStock(value, fallback) {
   return Number.isSafeInteger(stock) && stock >= 0 ? stock : null;
 }
 
+function parseShopColor(value, fallback) {
+  if (value === null || value === undefined || value === '') return fallback;
+  const normalized = String(value).trim().replace(/^#/, '');
+  if (!/^[0-9a-f]{6}$/i.test(normalized)) return null;
+  return parseInt(normalized, 16);
+}
+
 function shopEmbed(guildId) {
-  const guild = guildData(guildId);
-  const items = Object.values(guild.shop.items);
-  const embed = new EmbedBuilder().setColor(0x06b6d4).setTitle('🛒 Boutique Hirosaki').setDescription("Achète des objets avec l'argent de ton portefeuille. Utilise /buy pour acheter.").setFooter({ text: 'Les articles sont configurés directement sur Discord' }).setTimestamp();
-  if (!items.length) return embed.setDescription('La boutique est vide pour le moment.');
-  const lines = items.slice(0, 25).map(item => {
-    const stock = item.stock === -1 ? '∞' : String(item.stock);
-    const role = item.roleId ? ' • rôle inclus' : '';
-    return '🛍️ **' + item.name + '** — **' + money(item.price) + '**\nID : ' + item.id + ' • Stock : ' + stock + role + '\n' + item.description;
-  });
-  return embed.setDescription(lines.join(String.fromCharCode(10) + String.fromCharCode(10)));
+  const shop = guildData(guildId).shop;
+  const items = Object.values(shop.items);
+  const color = Number.isInteger(shop.color) ? shop.color : 0x06b6d4;
+  const embed = new EmbedBuilder()
+    .setColor(color)
+    .setTitle(String(shop.title || '🛒 Boutique Hirosaki').slice(0, 256))
+    .setDescription(String(shop.description || 'Achète des objets avec ton portefeuille.').slice(0, 4096))
+    .setFooter({ text: String(shop.footer || 'Les articles sont configurés directement sur Discord').slice(0, 2048) })
+    .setTimestamp();
+  if (!items.length) return embed.setDescription(String(shop.description || '') + (shop.description ? '\n\n' : '') + 'La boutique est vide pour le moment.');
+  const categories = new Map();
+  for (const item of items.slice(0, 25)) {
+    const category = String(item.category || 'Général').slice(0, 40);
+    if (!categories.has(category)) categories.set(category, []);
+    categories.get(category).push(item);
+  }
+  const sections = [];
+  for (const [category, categoryItems] of categories) {
+    const lines = categoryItems.map(item => {
+      const stock = item.stock === -1 ? '∞' : String(item.stock ?? 0);
+      const role = item.roleId ? ' • rôle inclus' : '';
+      const emoji = item.emoji || '🛍️';
+      return String(emoji) + ' **' + String(item.name) + '** — **' + money(item.price) + '**\nID : ' + item.id + ' • Stock : ' + stock + role + '\n' + String(item.description || '');
+    });
+    sections.push('**' + category + '**\n' + lines.join('\n\n'));
+  }
+  return embed.setDescription(sections.join('\n\n').slice(0, 4096));
 }
 
 function inventoryEmbed(username, user) {
@@ -240,16 +279,18 @@ function inventoryEmbed(username, user) {
 
 function commandBuilders() {
   const amountOption = option => option.setName("montant").setDescription("Montant ou all").setRequired(true);
+  const manageShop = command => command.setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild);
   return [
     new SlashCommandBuilder().setName("shop").setDescription("Afficher la boutique du serveur"),
     new SlashCommandBuilder().setName("buy").setDescription("Acheter un article").addStringOption(option => option.setName("item").setDescription("ID de l article").setRequired(true)).addIntegerOption(option => option.setName("quantite").setDescription("Quantité").setMinValue(1).setMaxValue(99).setRequired(true)),
     new SlashCommandBuilder().setName("inventory").setDescription("Voir ton inventaire"),
-    new SlashCommandBuilder().setName("shop-create").setDescription("Créer un article").setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild).addStringOption(option => option.setName("id").setDescription("ID court sans espace").setRequired(true)).addStringOption(option => option.setName("nom").setDescription("Nom affiché").setMaxLength(80).setRequired(true)).addIntegerOption(option => option.setName("prix").setDescription("Prix en coins").setMinValue(1).setRequired(true)).addStringOption(option => option.setName("description").setDescription("Description").setMaxLength(200).setRequired(true)).addStringOption(option => option.setName("stock").setDescription("Nombre ou illimite").setRequired(false)).addRoleOption(option => option.setName("role").setDescription("Rôle donné à l achat").setRequired(false)),
-    new SlashCommandBuilder().setName("shop-edit").setDescription("Modifier un article").setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild).addStringOption(option => option.setName("id").setDescription("ID de l article").setRequired(true)).addStringOption(option => option.setName("nom").setDescription("Nouveau nom").setMaxLength(80).setRequired(false)).addIntegerOption(option => option.setName("prix").setDescription("Nouveau prix").setMinValue(1).setRequired(false)).addStringOption(option => option.setName("description").setDescription("Nouvelle description").setMaxLength(200).setRequired(false)).addStringOption(option => option.setName("stock").setDescription("Nombre ou illimite").setRequired(false)).addRoleOption(option => option.setName("role").setDescription("Nouveau rôle").setRequired(false)),
-    new SlashCommandBuilder().setName("shop-delete").setDescription("Supprimer un article").setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild).addStringOption(option => option.setName("id").setDescription("ID de l article").setRequired(true)),
-    new SlashCommandBuilder().setName("shop-list").setDescription("Lister les articles").setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild),
+    manageShop(new SlashCommandBuilder().setName("shop-create").setDescription("Créer un article").addStringOption(option => option.setName("id").setDescription("ID court sans espace").setMaxLength(20).setRequired(true)).addStringOption(option => option.setName("nom").setDescription("Nom affiché").setMaxLength(80).setRequired(true)).addIntegerOption(option => option.setName("prix").setDescription("Prix en coins").setMinValue(1).setRequired(true)).addStringOption(option => option.setName("description").setDescription("Description").setMaxLength(200).setRequired(true)).addStringOption(option => option.setName("stock").setDescription("Nombre ou illimite").setRequired(false)).addStringOption(option => option.setName("emoji").setDescription("Emoji affiché").setMaxLength(32).setRequired(false)).addStringOption(option => option.setName("categorie").setDescription("Catégorie").setMaxLength(40).setRequired(false)).addRoleOption(option => option.setName("role").setDescription("Rôle donné à l achat").setRequired(false))),
+    manageShop(new SlashCommandBuilder().setName("shop-edit").setDescription("Modifier un article").addStringOption(option => option.setName("id").setDescription("ID de l article").setMaxLength(20).setRequired(true)).addStringOption(option => option.setName("nom").setDescription("Nouveau nom").setMaxLength(80).setRequired(false)).addIntegerOption(option => option.setName("prix").setDescription("Nouveau prix").setMinValue(1).setRequired(false)).addStringOption(option => option.setName("description").setDescription("Nouvelle description").setMaxLength(200).setRequired(false)).addStringOption(option => option.setName("stock").setDescription("Nombre ou illimite").setRequired(false)).addStringOption(option => option.setName("emoji").setDescription("Nouvel emoji").setMaxLength(32).setRequired(false)).addStringOption(option => option.setName("categorie").setDescription("Nouvelle catégorie").setMaxLength(40).setRequired(false)).addRoleOption(option => option.setName("role").setDescription("Nouveau rôle").setRequired(false)).addBooleanOption(option => option.setName("retirer-role").setDescription("Retirer le rôle associé").setRequired(false))),
+    manageShop(new SlashCommandBuilder().setName("shop-delete").setDescription("Supprimer un article").addStringOption(option => option.setName("id").setDescription("ID de l article").setMaxLength(20).setRequired(true))),
+    manageShop(new SlashCommandBuilder().setName("shop-list").setDescription("Lister les articles")),
+    manageShop(new SlashCommandBuilder().setName("shop-config").setDescription("Personnaliser l affichage de la boutique").addStringOption(option => option.setName("titre").setDescription("Titre de la boutique").setMaxLength(100).setRequired(false)).addStringOption(option => option.setName("description").setDescription("Description de la boutique").setMaxLength(400).setRequired(false)).addStringOption(option => option.setName("couleur").setDescription("Couleur hexadécimale, ex: 06b6d4").setMaxLength(7).setRequired(false)).addStringOption(option => option.setName("pied").setDescription("Texte du pied de page").setMaxLength(200).setRequired(false)).addBooleanOption(option => option.setName("reinitialiser").setDescription("Réinitialiser les réglages").setRequired(false))),
     new SlashCommandBuilder().setName("rps").setDescription("Jouer à pierre papier ciseaux").addIntegerOption(option => option.setName("mise").setDescription("Nombre de coins").setMinValue(1).setRequired(true)).addStringOption(option => option.setName("choix").setDescription("Ton choix").addChoices({ name: "Pierre", value: "pierre" }, { name: "Papier", value: "papier" }, { name: "Ciseaux", value: "ciseaux" }).setRequired(true)),
-    new SlashCommandBuilder().setName("higherlower").setDescription("Deviner si la carte monte ou descend").addIntegerOption(option => option.setName("mise").setDescription("Nombre de coins").setMinValue(1).setRequired(true)).addStringOption(option => option.setName("choix").setDescription("Plus haut ou plus bas").addChoices({ name: "Plus haut", value: "haut" }, { name: "Plus bas", value: "bas" }).setRequired(true)), 
+    new SlashCommandBuilder().setName("higherlower").setDescription("Deviner si la carte monte ou descend").addIntegerOption(option => option.setName("mise").setDescription("Nombre de coins").setMinValue(1).setRequired(true)).addStringOption(option => option.setName("choix").setDescription("Plus haut ou plus bas").addChoices({ name: "Plus haut", value: "haut" }, { name: "Plus bas", value: "bas" }).setRequired(true)),
     new SlashCommandBuilder().setName("help").setDescription("Afficher l'aide du bot de jeu"),
     new SlashCommandBuilder().setName("balance").setDescription("Voir ton portefeuille et ta banque"),
     new SlashCommandBuilder().setName("work").setDescription("Travailler pour gagner des coins"),
@@ -263,22 +304,67 @@ function commandBuilders() {
     new SlashCommandBuilder().setName("dice").setDescription("Parier sur un résultat de dé").addIntegerOption(option => option.setName("mise").setDescription("Nombre de coins").setMinValue(1).setRequired(true)).addIntegerOption(option => option.setName("choix").setDescription("Nombre choisi").setMinValue(1).setMaxValue(6).setRequired(true)),
     new SlashCommandBuilder().setName("slots").setDescription("Lancer la machine à sous").addIntegerOption(option => option.setName("mise").setDescription("Nombre de coins").setMinValue(1).setRequired(true)),
     new SlashCommandBuilder().setName("roulette").setDescription("Jouer à la roulette").addIntegerOption(option => option.setName("mise").setDescription("Nombre de coins").setMinValue(1).setRequired(true)).addStringOption(option => option.setName("pari").setDescription("rouge, noir ou un nombre de 0 à 36").setRequired(true)),
+    new SlashCommandBuilder().setName("craps").setDescription("Jouer au craps classique").addIntegerOption(option => option.setName("mise").setDescription("Nombre de coins").setMinValue(1).setRequired(true)).addStringOption(option => option.setName("pari").setDescription("Type de pari").addChoices({ name: "Pass", value: "pass" }, { name: "Don't Pass", value: "dontpass" }).setRequired(true)),
     new SlashCommandBuilder().setName("blackjack").setDescription("Commencer une partie de blackjack").addIntegerOption(option => option.setName("mise").setDescription("Nombre de coins").setMinValue(1).setRequired(true)),
     new SlashCommandBuilder().setName("hit").setDescription("Tirer une carte au blackjack"),
-    new SlashCommandBuilder().setName("stand").setDescription("Rester au blackjack")
+    new SlashCommandBuilder().setName("stand").setDescription("Rester au blackjack"),
+    new SlashCommandBuilder().setName("split").setDescription("Séparer une paire au blackjack"),
+    new SlashCommandBuilder().setName("double").setDescription("Doubler la mise et tirer une carte")
   ].map(command => command.toJSON());
 }
 
-function payoutBlackjack(guildId, userId, result) {
+function blackjackHands(game) {
+  if (Array.isArray(game.hands)) return game.hands;
+  game.hands = [{ cards: game.player || [], bet: game.bet, finished: false }];
+  return game.hands;
+}
+
+function currentBlackjackHand(game) {
+  const hands = blackjackHands(game);
+  return hands[game.activeHand || 0];
+}
+
+function advanceBlackjackHand(game) {
+  const hands = blackjackHands(game);
+  for (let index = 0; index < hands.length; index += 1) {
+    if (!hands[index].finished) {
+      game.activeHand = index;
+      return true;
+    }
+  }
+  return false;
+}
+
+function blackjackText(game, revealDealer) {
+  const hands = blackjackHands(game);
+  const dealer = revealDealer ? handText(game.dealer) : game.dealer[0].rank + game.dealer[0].suit + " ??";
+  const dealerScore = revealDealer ? handValue(game.dealer) : "?";
+  const players = hands.map((hand, index) => {
+    const active = !hand.finished && index === (game.activeHand || 0) ? " ← en cours" : "";
+    return "**Main " + (index + 1) + active + "** : " + handText(hand.cards) + " (" + handValue(hand.cards) + ")";
+  }).join("\n");
+  return "**Croupier** : " + dealer + " (" + dealerScore + ")\n" + players;
+}
+
+function settleBlackjack(guildId, userId) {
   const guild = guildData(guildId);
   const game = guild.blackjack[userId];
-  if (!game) return 0;
-  const user = userData(guildId, userId);
-  const payout = result === "win" ? game.bet * 2 : result === "tie" ? game.bet : 0;
-  user.wallet += payout;
+  if (!game) return { payout: 0, results: [] };
+  const hands = blackjackHands(game);
+  while (handValue(game.dealer) < 17) game.dealer.push(game.deck.pop());
+  const dealerScore = handValue(game.dealer);
+  let payout = 0;
+  const results = hands.map(hand => {
+    const playerScore = handValue(hand.cards);
+    const result = playerScore > 21 ? "lose" : dealerScore > 21 || playerScore > dealerScore ? "win" : playerScore === dealerScore ? "tie" : "lose";
+    if (result === "win") payout += hand.bet * 2;
+    if (result === "tie") payout += hand.bet;
+    return result;
+  });
+  userData(guildId, userId).wallet += payout;
   delete guild.blackjack[userId];
   saveDatabase();
-  return payout;
+  return { payout, results };
 }
 
 async function handleInteraction(interaction) {
@@ -316,9 +402,30 @@ async function handleInteraction(interaction) {
     return interaction.reply({ content: '✅ Achat confirmé : **' + quantity + ' × ' + item.name + '** pour **' + money(total) + '**.' + (role ? String.fromCharCode(10) + 'Le rôle a été ajouté.' : '') });
   }
 
-  if (['shop-create', 'shop-edit', 'shop-delete', 'shop-list'].includes(command)) {
+  if (['shop-config', 'shop-create', 'shop-edit', 'shop-delete', 'shop-list'].includes(command)) {
     if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild) && !interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) return interaction.reply({ content: 'Cette commande est réservée aux administrateurs.', ephemeral: true });
     const shop = guildData(guildId).shop;
+    if (command === 'shop-config') {
+      const reset = interaction.options.getBoolean('reinitialiser') === true;
+      if (reset) {
+        Object.assign(shop, defaultShopSettings());
+        saveDatabase();
+        return interaction.reply({ content: '✅ Réglages de la boutique réinitialisés.', embeds: [shopEmbed(guildId)] });
+      }
+      const title = interaction.options.getString('titre');
+      const description = interaction.options.getString('description');
+      const colorInput = interaction.options.getString('couleur');
+      const footer = interaction.options.getString('pied');
+      if (title === null && description === null && colorInput === null && footer === null) return interaction.reply({ embeds: [shopEmbed(guildId)], ephemeral: true });
+      const color = parseShopColor(colorInput, shop.color);
+      if (color === null) return interaction.reply({ content: 'Couleur invalide. Utilise six caractères hexadécimaux, par exemple 06b6d4 ou #06b6d4.', ephemeral: true });
+      if (title !== null) shop.title = title;
+      if (description !== null) shop.description = description;
+      if (colorInput !== null) shop.color = color;
+      if (footer !== null) shop.footer = footer;
+      saveDatabase();
+      return interaction.reply({ content: '✅ Apparence de la boutique mise à jour.', embeds: [shopEmbed(guildId)] });
+    }
     if (command === 'shop-list') return interaction.reply({ embeds: [shopEmbed(guildId)], ephemeral: true });
     const itemId = normalizeItemId(interaction.options.getString('id'));
     if (!itemId) return interaction.reply({ content: 'ID invalide : utilise des lettres, chiffres, tirets ou underscores.', ephemeral: true });
@@ -333,9 +440,9 @@ async function handleInteraction(interaction) {
       const role = interaction.options.getRole('role');
       const stock = parseStock(interaction.options.getString('stock'), -1);
       if (stock === null) return interaction.reply({ content: 'Stock invalide. Mets un nombre, 0 ou illimite.', ephemeral: true });
-      shop.items[itemId] = { id: itemId, name: interaction.options.getString('nom'), price: interaction.options.getInteger('prix'), description: interaction.options.getString('description'), stock, roleId: role?.id || null };
+      shop.items[itemId] = { id: itemId, name: interaction.options.getString('nom'), price: interaction.options.getInteger('prix'), description: interaction.options.getString('description'), stock, emoji: interaction.options.getString('emoji') || '🛍️', category: interaction.options.getString('categorie') || 'Général', roleId: role?.id || null };
       saveDatabase();
-      return interaction.reply({ content: '✅ Article **' + itemId + '** ajouté à la boutique.' });
+      return interaction.reply({ content: '✅ Article **' + itemId + '** ajouté à la boutique.', embeds: [shopEmbed(guildId)] });
     }
     const item = shop.items[itemId];
     if (!item) return interaction.reply({ content: 'Article introuvable.', ephemeral: true });
@@ -343,16 +450,60 @@ async function handleInteraction(interaction) {
     const price = interaction.options.getInteger('prix');
     const description = interaction.options.getString('description');
     const stockInput = interaction.options.getString('stock');
+    const emoji = interaction.options.getString('emoji');
+    const category = interaction.options.getString('categorie');
     const role = interaction.options.getRole('role');
+    const removeRole = interaction.options.getBoolean('retirer-role') === true;
     const stock = parseStock(stockInput, item.stock);
     if (stock === null) return interaction.reply({ content: 'Stock invalide. Mets un nombre, 0 ou illimite.', ephemeral: true });
-    if (name) item.name = name;
+    if (name !== null) item.name = name;
     if (price !== null) item.price = price;
-    if (description) item.description = description;
+    if (description !== null) item.description = description;
     if (stockInput !== null) item.stock = stock;
-    if (role) item.roleId = role.id;
+    if (emoji !== null) item.emoji = emoji;
+    if (category !== null) item.category = category;
+    if (removeRole) item.roleId = null;
+    else if (role) item.roleId = role.id;
     saveDatabase();
-    return interaction.reply({ content: '✏️ Article **' + itemId + '** modifié.' });
+    return interaction.reply({ content: '✏️ Article **' + itemId + '** modifié.', embeds: [shopEmbed(guildId)] });
+  }
+
+  if (command === 'craps') {
+    const bet = interaction.options.getInteger('mise');
+    const pick = interaction.options.getString('pari');
+    if (bet > user.wallet) return interaction.reply({ content: "Tu n'as pas assez de coins dans ton portefeuille.", ephemeral: true });
+    const roll = () => {
+      const one = randomInt(1, 6);
+      const two = randomInt(1, 6);
+      return { one, two, total: one + two };
+    };
+    const formatRoll = value => '🎲 **' + value.one + ' + ' + value.two + ' = ' + value.total + '**';
+    const first = roll();
+    const rolls = [formatRoll(first)];
+    let win = false;
+    let push = false;
+    let reason = '';
+    if (pick === 'pass' && [7, 11].includes(first.total)) { win = true; reason = '7 ou 11 : le Pass gagne immédiatement.'; }
+    else if (pick === 'pass' && [2, 3, 12].includes(first.total)) reason = 'Craps : le Pass perd immédiatement.';
+    else if (pick === 'dontpass' && [2, 3].includes(first.total)) { win = true; reason = '2 ou 3 : le Don’t Pass gagne.'; }
+    else if (pick === 'dontpass' && first.total === 12) { push = true; reason = '12 : la mise Don’t Pass est remboursée.'; }
+    else if (pick === 'dontpass' && [7, 11].includes(first.total)) reason = '7 ou 11 : le Don’t Pass perd.';
+    else {
+      const point = first.total;
+      reason = 'Point établi : **' + point + '**.';
+      while (true) {
+        const next = roll();
+        rolls.push(formatRoll(next));
+        if (next.total === point) { win = pick === 'pass'; break; }
+        if (next.total === 7) { win = pick === 'dontpass'; break; }
+      }
+      reason += win ? ' Le résultat final est favorable à ton pari.' : ' Le résultat final est défavorable à ton pari.';
+    }
+    user.wallet -= bet;
+    const payout = push ? bet : win ? bet * 2 : 0;
+    user.wallet += payout;
+    saveDatabase();
+    return interaction.reply({ content: '🎰 **Craps — ' + (pick === 'pass' ? 'Pass' : 'Don’t Pass') + '**\n' + rolls.join(' → ') + '\n' + reason + '\n' + (push ? 'Égalité : mise remboursée.' : win ? '✅ Tu gagnes **' + money(payout) + '** !' : '❌ Tu perds ta mise de **' + money(bet) + '**.') });
   }
 
   if (command === 'rps') {
@@ -524,12 +675,19 @@ async function handleInteraction(interaction) {
     const bet = interaction.options.getInteger("mise");
     if (bet > user.wallet) return interaction.reply({ content: "Tu n'as pas assez de coins dans ton portefeuille.", ephemeral: true });
     user.wallet -= bet;
-    const game = { bet, deck: newDeck(), player: [], dealer: [] };
-    game.player.push(game.deck.pop(), game.deck.pop());
+    const game = { bet, deck: newDeck(), dealer: [], hands: [{ cards: [], bet, finished: false }], activeHand: 0 };
+    const hand = game.hands[0];
+    hand.cards.push(game.deck.pop(), game.deck.pop());
     game.dealer.push(game.deck.pop(), game.deck.pop());
     guild.blackjack[userId] = game;
-    const playerScore = handValue(game.player);
+    const playerScore = handValue(hand.cards);
     const dealerScore = handValue(game.dealer);
+    if (playerScore === 21 && dealerScore === 21) {
+      user.wallet += bet;
+      delete guild.blackjack[userId];
+      saveDatabase();
+      return interaction.reply({ content: "🃏\n" + blackjackText(game, true) + "\nBlackjacks des deux côtés : égalité, mise remboursée." });
+    }
     if (playerScore === 21) {
       const payout = Math.floor(bet * 2.5);
       user.wallet += payout;
@@ -543,35 +701,80 @@ async function handleInteraction(interaction) {
       return interaction.reply({ content: "🃏\n" + blackjackText(game, true) + "\nLe croupier a un blackjack. Tu perds ta mise." });
     }
     saveDatabase();
-    return interaction.reply({ content: "🃏\n" + blackjackText(game, false) + "\nUtilise /hit pour tirer ou /stand pour rester." });
+    return interaction.reply({ content: "🃏\n" + blackjackText(game, false) + "\nUtilise /hit, /stand, /split ou /double." });
   }
 
   if (command === "hit") {
     const guild = guildData(guildId);
     const game = guild.blackjack[userId];
     if (!game) return interaction.reply({ content: "Tu n'as pas de blackjack en cours. Lance /blackjack.", ephemeral: true });
-    game.player.push(game.deck.pop());
-    const score = handValue(game.player);
-    if (score > 21) {
-      delete guild.blackjack[userId];
+    const hand = currentBlackjackHand(game);
+    if (!hand || hand.finished) return interaction.reply({ content: "Cette main est déjà terminée.", ephemeral: true });
+    hand.cards.push(game.deck.pop());
+    if (handValue(hand.cards) > 21) hand.finished = true;
+    if (hand.finished && advanceBlackjackHand(game)) {
       saveDatabase();
-      return interaction.reply({ content: "🃏\n" + blackjackText(game, true) + "\nTu dépasses 21. Partie perdue." });
+      return interaction.reply({ content: "🃏\n" + blackjackText(game, false) + "\nMain dépassée ou terminée. À toi de jouer avec la main suivante : /hit ou /stand." });
+    }
+    if (hand.finished) {
+      const result = settleBlackjack(guildId, userId);
+      return interaction.reply({ content: "🃏\n" + blackjackText(game, true) + "\nTu dépasses 21. Partie perdue." + (result.payout ? "\nGain : **" + money(result.payout) + "**." : "") });
     }
     saveDatabase();
-    return interaction.reply({ content: "🃏\n" + blackjackText(game, false) + "\n/hit ou /stand ?" });
+    return interaction.reply({ content: "🃏\n" + blackjackText(game, false) + "\n/hit, /stand ou /double ?" });
   }
 
   if (command === "stand") {
     const guild = guildData(guildId);
     const game = guild.blackjack[userId];
     if (!game) return interaction.reply({ content: "Tu n'as pas de blackjack en cours. Lance /blackjack.", ephemeral: true });
-    while (handValue(game.dealer) < 17) game.dealer.push(game.deck.pop());
-    const playerScore = handValue(game.player);
-    const dealerScore = handValue(game.dealer);
-    const result = dealerScore > 21 || playerScore > dealerScore ? "win" : playerScore === dealerScore ? "tie" : "lose";
-    const message = "🃏\n" + blackjackText(game, true) + "\n\n" + (result === "win" ? "Tu remportes la partie !" : result === "tie" ? "Égalité." : "Le croupier gagne.");
-    const payout = payoutBlackjack(guildId, userId, result);
-    return interaction.reply({ content: message + (payout ? "\nGain : **" + money(payout) + "**." : "") });
+    const hand = currentBlackjackHand(game);
+    if (!hand || hand.finished) return interaction.reply({ content: "Cette main est déjà terminée.", ephemeral: true });
+    hand.finished = true;
+    if (advanceBlackjackHand(game)) {
+      saveDatabase();
+      return interaction.reply({ content: "🃏\n" + blackjackText(game, false) + "\nMain terminée. Joue maintenant la main suivante : /hit ou /stand." });
+    }
+    const result = settleBlackjack(guildId, userId);
+    const outcome = result.results.map((value, index) => "Main " + (index + 1) + " : " + (value === "win" ? "gagnée" : value === "tie" ? "égalité" : "perdue")).join("\n");
+    return interaction.reply({ content: "🃏\n" + blackjackText(game, true) + "\n" + outcome + (result.payout ? "\nGain : **" + money(result.payout) + "**." : "\nAucun gain cette fois.") });
+  }
+
+  if (command === "split") {
+    const guild = guildData(guildId);
+    const game = guild.blackjack[userId];
+    if (!game) return interaction.reply({ content: "Tu n'as pas de blackjack en cours. Lance /blackjack.", ephemeral: true });
+    const hands = blackjackHands(game);
+    const hand = currentBlackjackHand(game);
+    if (hands.length !== 1 || !hand || hand.cards.length !== 2 || hand.cards[0].rank !== hand.cards[1].rank) return interaction.reply({ content: "Tu peux utiliser /split uniquement avec deux cartes de même rang, au début de la main.", ephemeral: true });
+    if (hand.bet > user.wallet) return interaction.reply({ content: "Il te faut une deuxième mise identique pour séparer cette paire.", ephemeral: true });
+    user.wallet -= hand.bet;
+    const first = { cards: [hand.cards[0], game.deck.pop()], bet: hand.bet, finished: false };
+    const second = { cards: [hand.cards[1], game.deck.pop()], bet: hand.bet, finished: false };
+    game.hands = [first, second];
+    game.activeHand = 0;
+    saveDatabase();
+    return interaction.reply({ content: "✂️ Paire séparée !\n" + blackjackText(game, false) + "\nJoue la main 1 avec /hit ou /stand." });
+  }
+
+  if (command === "double") {
+    const guild = guildData(guildId);
+    const game = guild.blackjack[userId];
+    if (!game) return interaction.reply({ content: "Tu n'as pas de blackjack en cours. Lance /blackjack.", ephemeral: true });
+    const hand = currentBlackjackHand(game);
+    if (!hand || hand.finished || hand.cards.length !== 2) return interaction.reply({ content: "Tu peux doubler uniquement avec deux cartes au début d'une main.", ephemeral: true });
+    if (hand.bet > user.wallet) return interaction.reply({ content: "Il te faut assez de coins pour doubler cette mise.", ephemeral: true });
+    user.wallet -= hand.bet;
+    hand.bet *= 2;
+    hand.cards.push(game.deck.pop());
+    hand.finished = true;
+    if (advanceBlackjackHand(game)) {
+      saveDatabase();
+      return interaction.reply({ content: "⏫ Mise doublée et une carte tirée.\n" + blackjackText(game, false) + "\nJoue la main suivante : /hit ou /stand." });
+    }
+    const result = settleBlackjack(guildId, userId);
+    const outcome = result.results.map((value, index) => "Main " + (index + 1) + " : " + (value === "win" ? "gagnée" : value === "tie" ? "égalité" : "perdue")).join("\n");
+    return interaction.reply({ content: "⏫\n" + blackjackText(game, true) + "\n" + outcome + (result.payout ? "\nGain : **" + money(result.payout) + "**." : "\nAucun gain cette fois.") });
   }
 }
 
