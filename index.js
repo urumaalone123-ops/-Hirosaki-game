@@ -195,7 +195,7 @@ function helpEmbed() {
     .setDescription("Le bot de jeu et d'économie du serveur.\nLes commandes sont disponibles dans le menu slash Discord.")
     .addFields(
       { name: "💰 Économie", value: "/balance — voir ton argent\n/work — travailler\n/daily — récompense quotidienne\n/deposit montant:<montant> — déposer\n/withdraw montant:<montant> — retirer\n/leaderboard — classement", inline: false },
-      { name: "🎰 Jeux", value: "/blackjack mise:<montant> — blackjack\n/hit, /stand, /split et /double\n/craps mise:<montant> pari:<pass|dontpass>\n/coinflip mise:<montant> choix:<pile|face>\n/dice mise:<montant> choix:<1-6>\n/slots mise:<montant>\n/roulette mise:<montant> pari:<rouge|noir|0-36>", inline: false },
+      { name: "🎰 Jeux", value: "/blackjack mise:<montant> — blackjack\n/hit, /stand, /split et /double\n/craps mise:<montant>\n/coinflip mise:<montant> choix:<pile|face>\n/dice mise:<montant> choix:<1-6>\n/slots mise:<montant>\n/roulette mise:<montant> pari:<rouge|noir|0-36>", inline: false },
       { name: "🕵️ Interaction", value: "/steal membre:<membre> — tenter un vol", inline: false },
       { name: "🛒 Boutique", value: "/shop — voir la boutique\n/buy item:<id> quantité:<nombre> — acheter\n/inventory — voir tes achats\n\nAdmin : /shop-create, /shop-edit, /shop-delete, /shop-list, /shop-config", inline: false }
     )
@@ -304,7 +304,7 @@ function commandBuilders() {
     new SlashCommandBuilder().setName("dice").setDescription("Parier sur un résultat de dé").addIntegerOption(option => option.setName("mise").setDescription("Nombre de coins").setMinValue(1).setRequired(true)).addIntegerOption(option => option.setName("choix").setDescription("Nombre choisi").setMinValue(1).setMaxValue(6).setRequired(true)),
     new SlashCommandBuilder().setName("slots").setDescription("Lancer la machine à sous").addIntegerOption(option => option.setName("mise").setDescription("Nombre de coins").setMinValue(1).setRequired(true)),
     new SlashCommandBuilder().setName("roulette").setDescription("Jouer à la roulette").addIntegerOption(option => option.setName("mise").setDescription("Nombre de coins").setMinValue(1).setRequired(true)).addStringOption(option => option.setName("pari").setDescription("rouge, noir ou un nombre de 0 à 36").setRequired(true)),
-    new SlashCommandBuilder().setName("craps").setDescription("Jouer au craps classique").addIntegerOption(option => option.setName("mise").setDescription("Nombre de coins").setMinValue(1).setRequired(true)).addStringOption(option => option.setName("pari").setDescription("Type de pari").addChoices({ name: "Pass", value: "pass" }, { name: "Don't Pass", value: "dontpass" }).setRequired(true)),
+    new SlashCommandBuilder().setName("craps").setDescription("Jouer au craps classique").addIntegerOption(option => option.setName("mise").setDescription("Nombre de coins").setMinValue(1).setRequired(true)),
     new SlashCommandBuilder().setName("blackjack").setDescription("Commencer une partie de blackjack").addIntegerOption(option => option.setName("mise").setDescription("Nombre de coins").setMinValue(1).setRequired(true)),
     new SlashCommandBuilder().setName("hit").setDescription("Tirer une carte au blackjack"),
     new SlashCommandBuilder().setName("stand").setDescription("Rester au blackjack"),
@@ -470,7 +470,6 @@ async function handleInteraction(interaction) {
 
   if (command === 'craps') {
     const bet = interaction.options.getInteger('mise');
-    const pick = interaction.options.getString('pari');
     if (bet > user.wallet) return interaction.reply({ content: "Tu n'as pas assez de coins dans ton portefeuille.", ephemeral: true });
     const roll = () => {
       const one = randomInt(1, 6);
@@ -480,31 +479,41 @@ async function handleInteraction(interaction) {
     const formatRoll = value => '🎲 **' + value.one + ' + ' + value.two + ' = ' + value.total + '**';
     const first = roll();
     const rolls = [formatRoll(first)];
-    let win = false;
-    let push = false;
+    let payout = 0;
     let reason = '';
-    if (pick === 'pass' && [7, 11].includes(first.total)) { win = true; reason = '7 ou 11 : le Pass gagne immédiatement.'; }
-    else if (pick === 'pass' && [2, 3, 12].includes(first.total)) reason = 'Craps : le Pass perd immédiatement.';
-    else if (pick === 'dontpass' && [2, 3].includes(first.total)) { win = true; reason = '2 ou 3 : le Don’t Pass gagne.'; }
-    else if (pick === 'dontpass' && first.total === 12) { push = true; reason = '12 : la mise Don’t Pass est remboursée.'; }
-    else if (pick === 'dontpass' && [7, 11].includes(first.total)) reason = '7 ou 11 : le Don’t Pass perd.';
-    else {
+    if ([7, 11].includes(first.total)) {
+      payout = bet * 2;
+      reason = '7 ou 11 au premier tir : tu gagnes x2 ta mise.';
+    } else if ([2, 3, 12].includes(first.total)) {
+      reason = '2, 3 ou 12 au premier tir : tu perds ta mise.';
+    } else {
       const point = first.total;
       reason = 'Point établi : **' + point + '**. Tu as 3 lancers supplémentaires.';
+      let finished = false;
       for (let attempt = 1; attempt <= 3; attempt += 1) {
         const next = roll();
         rolls.push('Lancer ' + attempt + ' : ' + formatRoll(next));
-        if (next.total === point) { win = true; reason += ' Le point est ressorti.'; break; }
-        if (next.total === 7) { reason += ' Un 7 est sorti : la mise est perdue.'; break; }
-        if (attempt === 3) { push = true; reason += ' Le point n’est pas ressorti dans les 3 lancers : mise remboursée.'; }
+        if (next.total === point) {
+          payout = bet * 4;
+          reason += ' Le point est ressorti : gain x4.';
+          finished = true;
+          break;
+        }
+        if (next.total === 7) {
+          reason += ' Un 7 est sorti : tu perds ta mise.';
+          finished = true;
+          break;
+        }
       }
-      if (win && pick === 'dontpass') win = false;
+      if (!finished) {
+        payout = bet;
+        reason += ' Le point n’est pas ressorti en 3 lancers : mise remboursée.';
+      }
     }
     user.wallet -= bet;
-    const payout = push ? bet : win ? bet * 4 : 0;
     user.wallet += payout;
     saveDatabase();
-    return interaction.reply({ content: '🎰 **Craps — ' + (pick === 'pass' ? 'Pass' : 'Don’t Pass') + '**\n' + rolls.join(' → ') + '\n' + reason + '\n' + (push ? '↩️ Mise remboursée.' : win ? '✅ Tu gagnes **' + money(payout) + '** !' : '❌ Tu perds ta mise de **' + money(bet) + '**.') });
+    return interaction.reply({ content: '🎰 **Craps**\n' + rolls.join(' → ') + '\n' + reason + '\n' + (payout === 0 ? '❌ Tu perds ta mise de **' + money(bet) + '**.' : payout === bet ? '↩️ Mise remboursée.' : '✅ Tu remportes **' + money(payout) + '** !') });
   }
 
   if (command === 'rps') {
