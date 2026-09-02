@@ -156,7 +156,7 @@ function blackjackText(game, revealDealer) {
   return "**Croupier** : " + dealer + " (" + dealerScore + ")\n**Toi** : " + handText(game.player) + " (" + handValue(game.player) + ")";
 }
 
-function helpEmbed() {
+function balanceEmbed(username, user) {\n  return new EmbedBuilder()\n    .setColor(0x22c55e)\n    .setTitle("💰 Compte de " + username)\n    .setDescription("Voici ta situation financière sur ce serveur.")\n    .addFields(\n      { name: "👛 Portefeuille", value: "**" + money(user.wallet) + "**", inline: true },\n      { name: "🏦 Banque", value: "**" + money(user.bank) + "**", inline: true },\n      { name: "📊 Total", value: "**" + money(totalBalance(user)) + "**", inline: false }\n    )\n    .setFooter({ text: "Les jeux utilisent l'argent du portefeuille" })\n    .setTimestamp();\n}\n\nfunction helpEmbed() {
   return new EmbedBuilder()
     .setColor(0x7c3aed)
     .setTitle("🎮 Hirosaki Game")
@@ -228,7 +228,7 @@ async function handleInteraction(interaction) {
   const command = interaction.commandName;
 
   if (command === "help") return interaction.reply({ embeds: [helpEmbed()] });
-  if (command === "balance") return interaction.reply({ content: "💰 **" + interaction.user.username + "**\n" + accountLine(user) });
+  if (command === "balance") return interaction.reply({ embeds: [balanceEmbed(interaction.user.username, user)] });
 
   if (command === "work") {
     const availableAt = user.lastWork + WORK_COOLDOWN;
