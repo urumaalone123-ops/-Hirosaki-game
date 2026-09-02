@@ -187,7 +187,7 @@ function hiloCardText(card) {
 
 function hiloQuote(game, choice) {
   const current = game.current;
-  const favorable = game.deck.filter(card => choice === "plus" ? card.value > current.value : card.value < current.value).length;
+  const favorable = game.deck.filter(card => choice === "plus" ? card.value >= current.value : card.value <= current.value).length;
   const total = game.deck.length;
   if (!favorable || !total) return { favorable, total, probability: 0, multiplier: null };
   const probability = favorable / total;
@@ -355,7 +355,7 @@ const GAME_RULES = {
     title: '🃏 Règles de Hilo',
     description: 'Devine si la prochaine carte sera plus haute ou plus basse.',
     commands: '`/hilo mise`, `/hilo-guess choix:<plus|moins>`, `/hilo-cashout`',
-    details: 'L As vaut 1 et est la carte la plus basse. Une bonne réponse fait avancer la partie et ajoute une cote selon la probabilité restante : x1,5, x2 ou x2,5. La cote totale est plafonnée à x10. Une carte de même valeur ou une mauvaise réponse fait perdre la mise. Tu peux encaisser avec /hilo-cashout.'
+    details: 'L As vaut 1 et est la carte la plus basse. Une bonne réponse fait avancer la partie et ajoute une cote selon la probabilité restante : x1,5, x2 ou x2,5. La cote totale est plafonnée à x10. Une carte de même valeur compte comme une réussite si elle correspond au choix inférieur ou égal / supérieur ou égal ; une mauvaise réponse fait perdre la mise. Tu peux encaisser avec /hilo-cashout.'
   }
 };
 
@@ -382,7 +382,7 @@ function commandBuilders() {
     new SlashCommandBuilder().setName("buy").setDescription("Acheter un article").addStringOption(option => option.setName("item").setDescription("ID de l article").setRequired(true)).addIntegerOption(option => option.setName("quantite").setDescription("Quantité").setMinValue(1).setMaxValue(99).setRequired(true)),
     new SlashCommandBuilder().setName("inventory").setDescription("Voir ton inventaire"),
     new SlashCommandBuilder().setName("hilo").setDescription("Commencer une partie de Hilo").addIntegerOption(option => option.setName("mise").setDescription("Nombre de coins").setMinValue(1).setRequired(true)),
-    new SlashCommandBuilder().setName("hilo-guess").setDescription("Deviner la prochaine carte de Hilo").addStringOption(option => option.setName("choix").setDescription("Plus haute ou plus basse").addChoices({ name: "Plus haute", value: "plus" }, { name: "Plus basse", value: "moins" }).setRequired(true)),
+    new SlashCommandBuilder().setName("hilo-guess").setDescription("Deviner la prochaine carte de Hilo").addStringOption(option => option.setName("choix").setDescription("Plus haute ou égale, ou plus basse ou égale").addChoices({ name: "Plus haute ou égale", value: "plus" }, { name: "Plus basse ou égale", value: "moins" }).setRequired(true)),
     new SlashCommandBuilder().setName("hilo-cashout").setDescription("Encaisser ses gains de Hilo"),
     new SlashCommandBuilder().setName("rules").setDescription("Afficher les règles d un jeu").addStringOption(option => option.setName("jeu").setDescription("Jeu à expliquer").addChoices({ name: "Blackjack", value: "blackjack" }, { name: "Craps", value: "craps" }, { name: "Pile ou face", value: "coinflip" }, { name: "Dé", value: "dice" }, { name: "Machines à sous", value: "slots" }, { name: "Roulette", value: "roulette" }, { name: "Pierre-papier-ciseaux", value: "rps" }, { name: "Plus haut ou plus bas", value: "higherlower" }).setRequired(true)),
     new SlashCommandBuilder().setName("blackjack-rules").setDescription("Afficher les règles du blackjack"),
@@ -512,11 +512,11 @@ async function handleInteraction(interaction) {
     if (!quote.multiplier) return interaction.reply({ content: 'Ce choix est impossible avec la carte actuelle. Essaie l’autre direction.', ephemeral: true });
     const previous = game.current;
     const next = game.deck.pop();
-    const correct = choice === 'plus' ? next.value > previous.value : next.value < previous.value;
+    const correct = choice === 'plus' ? next.value >= previous.value : next.value <= previous.value;
     if (!correct) {
       delete guild.hilo[userId];
       saveDatabase();
-      return interaction.reply({ content: '🃏 **Hilo**\n' + hiloCardText(previous) + ' → ' + hiloCardText(next) + '\n❌ Mauvaise réponse ou carte de même valeur : tu perds ta mise de **' + money(game.bet) + '**.' });
+      return interaction.reply({ content: '🃏 **Hilo**\n' + hiloCardText(previous) + ' → ' + hiloCardText(next) + '\n❌ Mauvaise réponse : tu perds ta mise de **' + money(game.bet) + '**.' });
     }
     game.current = next;
     game.streak += 1;
