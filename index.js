@@ -72,6 +72,7 @@ function guildData(guildId) {
   if (!db.guilds[guildId]) db.guilds[guildId] = { users: {}, blackjack: {} };
   if (!db.guilds[guildId].users) db.guilds[guildId].users = {};
   if (!db.guilds[guildId].blackjack) db.guilds[guildId].blackjack = {};
+  if (!db.guilds[guildId].hilo) db.guilds[guildId].hilo = {};
   if (!db.guilds[guildId].shop) db.guilds[guildId].shop = { ...defaultShopSettings(), items: {} };
   const shop = db.guilds[guildId].shop;
   if (!shop.items) shop.items = {};
@@ -174,6 +175,30 @@ function blackjackText(game, revealDealer) {
   return "**Croupier** : " + dealer + " (" + dealerScore + ")\n**Toi** : " + handText(game.player) + " (" + handValue(game.player) + ")";
 }
 
+function newHiloDeck() {
+  const deck = [];
+  for (const suit of suits) for (const [rank] of ranks) deck.push({ suit, rank, value: rank === "A" ? 1 : Number(rank) || 10 });
+  return shuffle(deck);
+}
+
+function hiloCardText(card) {
+  return card.rank + card.suit + " (" + card.value + ")";
+}
+
+function hiloQuote(game, choice) {
+  const current = game.current;
+  const favorable = game.deck.filter(card => choice === "plus" ? card.value > current.value : card.value < current.value).length;
+  const total = game.deck.length;
+  if (!favorable || !total) return { favorable, total, probability: 0, multiplier: null };
+  const probability = favorable / total;
+  const multiplier = probability >= 0.75 ? 1.5 : probability >= 0.5 ? 2 : 2.5;
+  return { favorable, total, probability, multiplier };
+}
+
+function hiloRulesEmbed() {
+  return rulesEmbed("hilo");
+}
+
 function balanceEmbed(username, user) {
   return new EmbedBuilder()
     .setColor(0x22c55e)
@@ -195,7 +220,7 @@ function helpEmbed() {
     .setDescription("Le bot de jeu et d'économie du serveur.\nLes commandes sont disponibles dans le menu slash Discord.")
     .addFields(
       { name: "💰 Économie", value: "/balance — voir ton argent\n/work — travailler\n/daily — récompense quotidienne\n/deposit montant:<montant> — déposer\n/withdraw montant:<montant> — retirer\n/leaderboard — classement", inline: false },
-      { name: "🎰 Jeux", value: "/blackjack mise:<montant> — blackjack\n/hit, /stand, /split et /double\n/craps mise:<montant>\n/coinflip mise:<montant> choix:<pile|face>\n/dice mise:<montant> choix:<1-6>\n/slots mise:<montant>\n/roulette mise:<montant> pari:<rouge|noir|0-36>\n/rules jeu:<jeu> — règles détaillées", inline: false },
+      { name: "🎰 Jeux", value: "/blackjack mise:<montant> — blackjack\n/hit, /stand, /split et /double\n/craps mise:<montant>\n/hilo mise:<montant>, /hilo-guess et /hilo-cashout\n/coinflip mise:<montant> choix:<pile|face>\n/dice mise:<montant> choix:<1-6>\n/slots mise:<montant>\n/roulette mise:<montant> pari:<rouge|noir|0-36>\n/rules jeu:<jeu> — règles détaillées", inline: false },
       { name: "🕵️ Interaction", value: "/steal membre:<membre> — tenter un vol", inline: false },
       { name: "🛒 Boutique", value: "/shop — voir la boutique\n/buy item:<id> quantité:<nombre> — acheter\n/inventory — voir tes achats\n\nAdmin : /shop-create, /shop-edit, /shop-delete, /shop-list, /shop-config", inline: false }
     )
@@ -325,6 +350,12 @@ const GAME_RULES = {
     description: 'Devine si la prochaine carte sera plus haute ou plus basse.',
     commands: '`/higherlower mise choix:<haut|bas>`',
     details: 'Une bonne prédiction paie x2. Si les deux cartes ont la même valeur, la mise est remboursée. Une mauvaise prédiction fait perdre la mise.'
+  },
+  hilo: {
+    title: '🃏 Règles de Hilo',
+    description: 'Devine si la prochaine carte sera plus haute ou plus basse.',
+    commands: '`/hilo mise`, `/hilo-guess choix:<plus|moins>`, `/hilo-cashout`',
+    details: 'L As vaut 1 et est la carte la plus basse. Une bonne réponse fait avancer la partie et ajoute une cote selon la probabilité restante : x1,5, x2 ou x2,5. La cote totale est plafonnée à x10. Une carte de même valeur ou une mauvaise réponse fait perdre la mise. Tu peux encaisser avec /hilo-cashout.'
   }
 };
 
@@ -350,6 +381,9 @@ function commandBuilders() {
     new SlashCommandBuilder().setName("shop").setDescription("Afficher la boutique du serveur"),
     new SlashCommandBuilder().setName("buy").setDescription("Acheter un article").addStringOption(option => option.setName("item").setDescription("ID de l article").setRequired(true)).addIntegerOption(option => option.setName("quantite").setDescription("Quantité").setMinValue(1).setMaxValue(99).setRequired(true)),
     new SlashCommandBuilder().setName("inventory").setDescription("Voir ton inventaire"),
+    new SlashCommandBuilder().setName("hilo").setDescription("Commencer une partie de Hilo").addIntegerOption(option => option.setName("mise").setDescription("Nombre de coins").setMinValue(1).setRequired(true)),
+    new SlashCommandBuilder().setName("hilo-guess").setDescription("Deviner la prochaine carte de Hilo").addStringOption(option => option.setName("choix").setDescription("Plus haute ou plus basse").addChoices({ name: "Plus haute", value: "plus" }, { name: "Plus basse", value: "moins" }).setRequired(true)),
+    new SlashCommandBuilder().setName("hilo-cashout").setDescription("Encaisser ses gains de Hilo"),
     new SlashCommandBuilder().setName("rules").setDescription("Afficher les règles d un jeu").addStringOption(option => option.setName("jeu").setDescription("Jeu à expliquer").addChoices({ name: "Blackjack", value: "blackjack" }, { name: "Craps", value: "craps" }, { name: "Pile ou face", value: "coinflip" }, { name: "Dé", value: "dice" }, { name: "Machines à sous", value: "slots" }, { name: "Roulette", value: "roulette" }, { name: "Pierre-papier-ciseaux", value: "rps" }, { name: "Plus haut ou plus bas", value: "higherlower" }).setRequired(true)),
     new SlashCommandBuilder().setName("blackjack-rules").setDescription("Afficher les règles du blackjack"),
     new SlashCommandBuilder().setName("craps-rules").setDescription("Afficher les règles du craps"),
@@ -359,6 +393,7 @@ function commandBuilders() {
     new SlashCommandBuilder().setName("roulette-rules").setDescription("Afficher les règles de la roulette"),
     new SlashCommandBuilder().setName("rps-rules").setDescription("Afficher les règles de pierre-papier-ciseaux"),
     new SlashCommandBuilder().setName("higherlower-rules").setDescription("Afficher les règles de plus haut ou plus bas"),
+    new SlashCommandBuilder().setName("hilo-rules").setDescription("Afficher les règles de Hilo"),
     manageShop(new SlashCommandBuilder().setName("shop-create").setDescription("Créer un article").addStringOption(option => option.setName("id").setDescription("ID court sans espace").setMaxLength(20).setRequired(true)).addStringOption(option => option.setName("nom").setDescription("Nom affiché").setMaxLength(80).setRequired(true)).addIntegerOption(option => option.setName("prix").setDescription("Prix en coins").setMinValue(1).setRequired(true)).addStringOption(option => option.setName("description").setDescription("Description").setMaxLength(200).setRequired(true)).addStringOption(option => option.setName("stock").setDescription("Nombre ou illimite").setRequired(false)).addStringOption(option => option.setName("emoji").setDescription("Emoji affiché").setMaxLength(32).setRequired(false)).addStringOption(option => option.setName("categorie").setDescription("Catégorie").setMaxLength(40).setRequired(false)).addRoleOption(option => option.setName("role").setDescription("Rôle donné à l achat").setRequired(false))),
     manageShop(new SlashCommandBuilder().setName("shop-edit").setDescription("Modifier un article").addStringOption(option => option.setName("id").setDescription("ID de l article").setMaxLength(20).setRequired(true)).addStringOption(option => option.setName("nom").setDescription("Nouveau nom").setMaxLength(80).setRequired(false)).addIntegerOption(option => option.setName("prix").setDescription("Nouveau prix").setMinValue(1).setRequired(false)).addStringOption(option => option.setName("description").setDescription("Nouvelle description").setMaxLength(200).setRequired(false)).addStringOption(option => option.setName("stock").setDescription("Nombre ou illimite").setRequired(false)).addStringOption(option => option.setName("emoji").setDescription("Nouvel emoji").setMaxLength(32).setRequired(false)).addStringOption(option => option.setName("categorie").setDescription("Nouvelle catégorie").setMaxLength(40).setRequired(false)).addRoleOption(option => option.setName("role").setDescription("Nouveau rôle").setRequired(false)).addBooleanOption(option => option.setName("retirer-role").setDescription("Retirer le rôle associé").setRequired(false))),
     manageShop(new SlashCommandBuilder().setName("shop-delete").setDescription("Supprimer un article").addStringOption(option => option.setName("id").setDescription("ID de l article").setMaxLength(20).setRequired(true))),
@@ -451,9 +486,63 @@ async function handleInteraction(interaction) {
 
   if (command === "help") return interaction.reply({ embeds: [helpEmbed()] });
   if (command === "balance") return interaction.reply({ embeds: [balanceEmbed(interaction.user.username, user)] });
-  const ruleAliases = { "blackjack-rules": "blackjack", "craps-rules": "craps", "coinflip-rules": "coinflip", "dice-rules": "dice", "slots-rules": "slots", "roulette-rules": "roulette", "rps-rules": "rps", "higherlower-rules": "higherlower" };
+  const ruleAliases = { "blackjack-rules": "blackjack", "craps-rules": "craps", "coinflip-rules": "coinflip", "dice-rules": "dice", "slots-rules": "slots", "roulette-rules": "roulette", "rps-rules": "rps", "higherlower-rules": "higherlower", "hilo-rules": "hilo" };
   if (command === "rules") return interaction.reply({ embeds: [rulesEmbed(interaction.options.getString("jeu"))] });
   if (ruleAliases[command]) return interaction.reply({ embeds: [rulesEmbed(ruleAliases[command])] });
+
+  if (command === 'hilo') {
+    const guild = guildData(guildId);
+    if (guild.hilo[userId]) return interaction.reply({ content: 'Tu as déjà une partie de Hilo en cours. Utilise /hilo-guess ou /hilo-cashout.', ephemeral: true });
+    const bet = interaction.options.getInteger('mise');
+    if (bet > user.wallet) return interaction.reply({ content: "Tu n'as pas assez de coins dans ton portefeuille.", ephemeral: true });
+    const deck = newHiloDeck();
+    const current = deck.pop();
+    guild.hilo[userId] = { bet, deck, current, multiplier: 1, streak: 0 };
+    user.wallet -= bet;
+    saveDatabase();
+    return interaction.reply({ content: '🃏 **Hilo**\nCarte de départ : **' + hiloCardText(current) + '**\nDevine si la prochaine carte est **plus haute** ou **plus basse** avec /hilo-guess.\nTu peux encaisser à tout moment avec /hilo-cashout.' });
+  }
+
+  if (command === 'hilo-guess') {
+    const guild = guildData(guildId);
+    const game = guild.hilo[userId];
+    if (!game) return interaction.reply({ content: "Tu n'as pas de partie de Hilo en cours. Lance /hilo.", ephemeral: true });
+    const choice = interaction.options.getString('choix');
+    const quote = hiloQuote(game, choice);
+    if (!quote.multiplier) return interaction.reply({ content: 'Ce choix est impossible avec la carte actuelle. Essaie l’autre direction.', ephemeral: true });
+    const previous = game.current;
+    const next = game.deck.pop();
+    const correct = choice === 'plus' ? next.value > previous.value : next.value < previous.value;
+    if (!correct) {
+      delete guild.hilo[userId];
+      saveDatabase();
+      return interaction.reply({ content: '🃏 **Hilo**\n' + hiloCardText(previous) + ' → ' + hiloCardText(next) + '\n❌ Mauvaise réponse ou carte de même valeur : tu perds ta mise de **' + money(game.bet) + '**.' });
+    }
+    game.current = next;
+    game.streak += 1;
+    game.multiplier = Math.min(10, Number((game.multiplier * quote.multiplier).toFixed(2)));
+    if (!game.deck.length) {
+      const payout = Math.floor(game.bet * game.multiplier);
+      user.wallet += payout;
+      delete guild.hilo[userId];
+      saveDatabase();
+      return interaction.reply({ content: '🃏 **Hilo**\n' + hiloCardText(previous) + ' → ' + hiloCardText(next) + '\n✅ Bonne réponse ! Le paquet est terminé. Tu encaisses **' + money(payout) + '** (cote x' + game.multiplier + ').' });
+    }
+    saveDatabase();
+    return interaction.reply({ content: '🃏 **Hilo**\n' + hiloCardText(previous) + ' → ' + hiloCardText(next) + '\n✅ Bonne réponse ! Probabilité estimée : **' + Math.round(quote.probability * 100) + '%**, cote du tour : **x' + quote.multiplier + '**.\nCote accumulée : **x' + game.multiplier + '**. Continue avec /hilo-guess ou encaisse avec /hilo-cashout.' });
+  }
+
+  if (command === 'hilo-cashout') {
+    const guild = guildData(guildId);
+    const game = guild.hilo[userId];
+    if (!game) return interaction.reply({ content: "Tu n'as pas de partie de Hilo en cours. Lance /hilo.", ephemeral: true });
+    const payout = Math.floor(game.bet * game.multiplier);
+    user.wallet += payout;
+    delete guild.hilo[userId];
+    saveDatabase();
+    return interaction.reply({ content: '💰 **Hilo encaissé** : tu récupères **' + money(payout) + '** avec une cote de **x' + game.multiplier + '** après ' + game.streak + ' bonne(s) réponse(s).' });
+  }
+
   if (command === 'shop') return interaction.reply({ embeds: [shopEmbed(guildId)] });
 
   if (command === 'inventory') return interaction.reply({ embeds: [inventoryEmbed(interaction.user.username, user)] });
