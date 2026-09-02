@@ -1,1 +1,46 @@
-# Hirosaki Game\n\nBot Discord de jeu et d'économie avec commandes préfixées par +ec.\nLe namespace ec évite les conflits avec les commandes de ton bot Hirosaki de gestion.\n\n## Installation\n\n1. Installer Node.js 18.17 ou plus récent.\n2. Installer les dépendances avec : npm install\n3. Ajouter DISCORD_TOKEN dans les variables d'environnement du serveur.\n4. Activer Message Content Intent dans le portail développeur Discord.\n5. Démarrer avec : npm start\n\n## Commandes joueurs\n\n+ec help — afficher l'aide dans un embed\n+help-ec — raccourci unique pour l'aide\n+ec balance — voir le portefeuille et la banque\n+ec work — travailler avec un cooldown\n+ec daily — récompense quotidienne\n+ec deposit <montant|all> — déposer à la banque\n+ec withdraw <montant|all> — retirer de la banque\n+ec leaderboard — afficher le classement dans un embed\n+leaderboard-ec — raccourci unique du classement\n+ec steal @membre — tenter de voler le portefeuille d'un membre\n\n## Jeux\n\n+ec blackjack <mise>, puis +ec hit ou +ec stand\n+ec coinflip <mise> <pile|face>\n+ec dice <mise> <1-6>\n+ec slots <mise>\n+ec roulette <mise> <rouge|noir|0-36>\n\n## Administration\n\n+ec addmoney @membre <montant>\n\nLa permission Administrateur est nécessaire pour +ec addmoney.\n\n## Données et déploiement\n\nLes données sont sauvegardées dans data/economy.json. Le stockage local peut être perdu lors d'un redeploy Railway : utiliser un volume ou PostgreSQL pour une économie durable.\nNe commite jamais le vrai token Discord.\n
+# Hirosaki Game
+
+Bot Discord de jeu et d'économie avec commandes slash.
+Les commandes sont séparées du bot Hirosaki de gestion et apparaissent dans le menu Discord.
+
+## Installation
+
+1. Installer Node.js 18.17 ou plus récent.
+2. Installer les dépendances avec : npm install
+3. Ajouter DISCORD_TOKEN dans les variables d'environnement du serveur.
+4. Ajouter GUILD_ID avec l'identifiant du serveur pour enregistrer les commandes immédiatement pendant les tests.
+5. Activer Message Content Intent dans le portail développeur Discord.
+6. Démarrer avec : npm start
+
+## Commandes joueurs
+
+/help — afficher l'aide dans un embed
+/balance — voir le portefeuille et la banque
+/work — travailler avec un cooldown
+/daily — récompense quotidienne
+/deposit montant:<montant|all> — déposer à la banque
+/withdraw montant:<montant|all> — retirer de la banque
+/leaderboard — afficher le classement dans un embed
+/steal membre:<membre> — tenter de voler le portefeuille d'un membre
+
+## Jeux
+
+/blackjack mise:<montant>, puis /hit ou /stand
+/coinflip mise:<montant> choix:<pile|face>
+/dice mise:<montant> choix:<1-6>
+/slots mise:<montant>
+/roulette mise:<montant> pari:<rouge|noir|0-36>
+
+## Administration
+
+/addmoney membre:<membre> montant:<montant>
+
+La commande /addmoney est réservée aux administrateurs.
+
+## Déploiement Railway ou Bot-Hosting
+
+Commande de démarrage : npm start
+Variables nécessaires : DISCORD_TOKEN et GUILD_ID.
+Les données sont sauvegardées dans data/economy.json. Pour une économie durable, utiliser un volume persistant ou PostgreSQL.
+
+Ne commite jamais le vrai token Discord.
