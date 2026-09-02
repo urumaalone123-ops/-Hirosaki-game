@@ -490,20 +490,21 @@ async function handleInteraction(interaction) {
     else if (pick === 'dontpass' && [7, 11].includes(first.total)) reason = '7 ou 11 : le Don’t Pass perd.';
     else {
       const point = first.total;
-      reason = 'Point établi : **' + point + '**.';
-      while (true) {
+      reason = 'Point établi : **' + point + '**. Tu as 3 lancers supplémentaires.';
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
         const next = roll();
-        rolls.push(formatRoll(next));
-        if (next.total === point) { win = pick === 'pass'; break; }
-        if (next.total === 7) { win = pick === 'dontpass'; break; }
+        rolls.push('Lancer ' + attempt + ' : ' + formatRoll(next));
+        if (next.total === point) { win = true; reason += ' Le point est ressorti.'; break; }
+        if (next.total === 7) { reason += ' Un 7 est sorti : la mise est perdue.'; break; }
+        if (attempt === 3) { push = true; reason += ' Le point n’est pas ressorti dans les 3 lancers : mise remboursée.'; }
       }
-      reason += win ? ' Le résultat final est favorable à ton pari.' : ' Le résultat final est défavorable à ton pari.';
+      if (win && pick === 'dontpass') win = false;
     }
     user.wallet -= bet;
-    const payout = push ? bet : win ? bet * 2 : 0;
+    const payout = push ? bet : win ? bet * 4 : 0;
     user.wallet += payout;
     saveDatabase();
-    return interaction.reply({ content: '🎰 **Craps — ' + (pick === 'pass' ? 'Pass' : 'Don’t Pass') + '**\n' + rolls.join(' → ') + '\n' + reason + '\n' + (push ? 'Égalité : mise remboursée.' : win ? '✅ Tu gagnes **' + money(payout) + '** !' : '❌ Tu perds ta mise de **' + money(bet) + '**.') });
+    return interaction.reply({ content: '🎰 **Craps — ' + (pick === 'pass' ? 'Pass' : 'Don’t Pass') + '**\n' + rolls.join(' → ') + '\n' + reason + '\n' + (push ? '↩️ Mise remboursée.' : win ? '✅ Tu gagnes **' + money(payout) + '** !' : '❌ Tu perds ta mise de **' + money(bet) + '**.') });
   }
 
   if (command === 'rps') {
