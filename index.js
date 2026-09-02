@@ -101,7 +101,7 @@ function parseAmount(value, available) {
   if (!value) return null;
   if (String(value).toLowerCase() === "all") return Math.floor(available);
   const normalized = String(value).replace(/[, ]/g, "");
-  if (!/^\\d+(?:\\.\\d+)?$/.test(normalized)) return null;
+  if (!/^\d+(?:\.\d+)?$/.test(normalized)) return null;
   const amount = Math.floor(Number(normalized));
   return Number.isSafeInteger(amount) && amount > 0 ? amount : null;
 }
@@ -114,14 +114,14 @@ function remaining(until) {
 }
 
 function choice(value) {
-  return String(value || "").toLowerCase().normalize("NFD").replace(/\\p{Diacritic}/gu, "");
+  return String(value || "").toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
 }
 
 function memberMention(message, index) {
   const member = message.mentions.members.first();
   if (member) return member;
-  const raw = message.content.split(/\\s+/)[index];
-  if (!raw || !/^\\d{15,25}$/.test(raw)) return null;
+  const raw = message.content.split(/\s+/)[index];
+  if (!raw || !/^\d{15,25}$/.test(raw)) return null;
   return message.guild.members.cache.get(raw) || null;
 }
 
@@ -134,7 +134,7 @@ function totalBalance(user) {
 }
 
 function accountLine(user) {
-  return "Portefeuille : **" + money(user.wallet) + "**\\nBanque : **" + money(user.bank) + "**\\nTotal : **" + money(totalBalance(user)) + "**";
+  return "Portefeuille : **" + money(user.wallet) + "**\nBanque : **" + money(user.bank) + "**\nTotal : **" + money(totalBalance(user)) + "**";
 }
 
 const messageCooldowns = new Map();
@@ -177,7 +177,7 @@ function handText(hand) {
 function blackjackText(game, revealDealer) {
   const dealer = revealDealer ? handText(game.dealer) : game.dealer[0].rank + game.dealer[0].suit + " ??";
   const dealerScore = revealDealer ? handValue(game.dealer) : "?";
-  return "**Croupier** : " + dealer + " (" + dealerScore + ")\\n**Toi** : " + handText(game.player) + " (" + handValue(game.player) + ")";
+  return "**Croupier** : " + dealer + " (" + dealerScore + ")\n**Toi** : " + handText(game.player) + " (" + handValue(game.player) + ")";
 }
 
 function settleBlackjack(guildId, userId, result, message) {
@@ -205,7 +205,7 @@ function playBlackjackStand(message) {
   let result = "lose";
   if (dealerScore > 21 || playerScore > dealerScore) result = "win";
   else if (playerScore === dealerScore) result = "tie";
-  message.reply("🃏\\n" + blackjackText(game, true) + "\\n\\n" + (result === "win" ? "Tu remportes la partie !" : result === "tie" ? "Égalité." : "Le croupier gagne."));
+  message.reply("🃏\n" + blackjackText(game, true) + "\n\n" + (result === "win" ? "Tu remportes la partie !" : result === "tie" ? "Égalité." : "Le croupier gagne."));
   settleBlackjack(message.guild.id, message.author.id, result, message);
 }
 
@@ -235,11 +235,11 @@ function helpText() {
     "+addmoney @membre <montant> — ajouter des coins",
     "",
     "Les mises sont retirées avant chaque partie. Joue de façon responsable."
-  ].join("\\n");
+  ].join("\n");
 }
 
 async function handleCommand(message) {
-  const parts = message.content.slice(PREFIX.length).trim().split(/\\s+/);
+  const parts = message.content.slice(PREFIX.length).trim().split(/\s+/);
   const command = choice(parts.shift());
   if (!command) return;
   const guildId = message.guild.id;
@@ -249,7 +249,7 @@ async function handleCommand(message) {
   if (command === "help" || command === "aide") return message.reply(helpText());
 
   if (["balance", "bal", "money"].includes(command)) {
-    return message.reply("💰 **" + message.author.username + "**\\n" + accountLine(user));
+    return message.reply("💰 **" + message.author.username + "**\n" + accountLine(user));
   }
 
   if (command === "work" || command === "travail") {
@@ -278,7 +278,7 @@ async function handleCommand(message) {
     user.wallet -= amount;
     user.bank += amount;
     saveDatabase();
-    return message.reply("🏦 Tu déposes **" + money(amount) + "**.\\n" + accountLine(user));
+    return message.reply("🏦 Tu déposes **" + money(amount) + "**.\n" + accountLine(user));
   }
 
   if (command === "withdraw" || command === "retrait") {
@@ -287,7 +287,7 @@ async function handleCommand(message) {
     user.bank -= amount;
     user.wallet += amount;
     saveDatabase();
-    return message.reply("🏧 Tu retires **" + money(amount) + "**.\\n" + accountLine(user));
+    return message.reply("🏧 Tu retires **" + money(amount) + "**.\n" + accountLine(user));
   }
 
   if (["leaderboard", "classement", "rich"].includes(command)) {
@@ -295,7 +295,7 @@ async function handleCommand(message) {
     const rows = Object.entries(guild.users).map(([id, value]) => ({ id, total: totalBalance(value) })).sort((a, b) => b.total - a.total).slice(0, 10);
     if (!rows.length) return message.reply("Le classement est encore vide.");
     const lines = rows.map((row, index) => (index + 1) + ". <@" + row.id + "> — **" + money(row.total) + "**");
-    return message.reply("🏆 **Classement des fortunes**\\n" + lines.join("\\n"));
+    return message.reply("🏆 **Classement des fortunes**\n" + lines.join("\n"));
   }
 
   if (command === "steal" || command === "vol") {
@@ -375,14 +375,14 @@ async function handleCommand(message) {
     const payout = bet * multiplier;
     user.wallet += payout;
     saveDatabase();
-    if (payout) return message.reply("🎰 " + spin.join(" | ") + "\\nTu remportes **" + money(payout) + "** !");
-    return message.reply("🎰 " + spin.join(" | ") + "\\nPas de combinaison gagnante cette fois.");
+    if (payout) return message.reply("🎰 " + spin.join(" | ") + "\nTu remportes **" + money(payout) + "** !");
+    return message.reply("🎰 " + spin.join(" | ") + "\nPas de combinaison gagnante cette fois.");
   }
 
   if (command === "roulette") {
     const bet = parseAmount(parts[0], user.wallet);
     const pick = choice(parts[1]);
-    const validNumber = /^\\d+$/.test(pick) && Number(pick) >= 0 && Number(pick) <= 36;
+    const validNumber = /^\d+$/.test(pick) && Number(pick) >= 0 && Number(pick) <= 36;
     if (!bet || bet > user.wallet || (!validNumber && !["rouge", "red", "noir", "black"].includes(pick))) return message.reply("Utilisation : +roulette <mise> <rouge|noir|0-36>.");
     user.wallet -= bet;
     const result = randomInt(0, 36);
@@ -414,15 +414,15 @@ async function handleCommand(message) {
       user.wallet += payout;
       delete guild.blackjack[userId];
       saveDatabase();
-      return message.reply("🃏\\n" + blackjackText(game, true) + "\\nBlackjack naturel ! Tu gagnes **" + money(payout) + "**.");
+      return message.reply("🃏\n" + blackjackText(game, true) + "\nBlackjack naturel ! Tu gagnes **" + money(payout) + "**.");
     }
     if (dealerScore === 21) {
       delete guild.blackjack[userId];
       saveDatabase();
-      return message.reply("🃏\\n" + blackjackText(game, true) + "\\nLe croupier a un blackjack. Tu perds ta mise.");
+      return message.reply("🃏\n" + blackjackText(game, true) + "\nLe croupier a un blackjack. Tu perds ta mise.");
     }
     saveDatabase();
-    return message.reply("🃏\\n" + blackjackText(game, false) + "\\nUtilise +hit pour tirer ou +stand pour rester.");
+    return message.reply("🃏\n" + blackjackText(game, false) + "\nUtilise +hit pour tirer ou +stand pour rester.");
   }
 
   if (command === "hit" || command === "tirer") {
@@ -434,10 +434,10 @@ async function handleCommand(message) {
     if (score > 21) {
       delete guild.blackjack[userId];
       saveDatabase();
-      return message.reply("🃏\\n" + blackjackText(game, true) + "\\nTu dépasses 21. Partie perdue.");
+      return message.reply("🃏\n" + blackjackText(game, true) + "\nTu dépasses 21. Partie perdue.");
     }
     saveDatabase();
-    return message.reply("🃏\\n" + blackjackText(game, false) + "\\n+hit ou +stand ?");
+    return message.reply("🃏\n" + blackjackText(game, false) + "\n+hit ou +stand ?");
   }
 
   if (command === "stand" || command === "rester") return playBlackjackStand(message);
