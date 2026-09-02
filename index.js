@@ -156,7 +156,21 @@ function blackjackText(game, revealDealer) {
   return "**Croupier** : " + dealer + " (" + dealerScore + ")\n**Toi** : " + handText(game.player) + " (" + handValue(game.player) + ")";
 }
 
-function balanceEmbed(username, user) {\n  return new EmbedBuilder()\n    .setColor(0x22c55e)\n    .setTitle("💰 Compte de " + username)\n    .setDescription("Voici ta situation financière sur ce serveur.")\n    .addFields(\n      { name: "👛 Portefeuille", value: "**" + money(user.wallet) + "**", inline: true },\n      { name: "🏦 Banque", value: "**" + money(user.bank) + "**", inline: true },\n      { name: "📊 Total", value: "**" + money(totalBalance(user)) + "**", inline: false }\n    )\n    .setFooter({ text: "Les jeux utilisent l'argent du portefeuille" })\n    .setTimestamp();\n}\n\nfunction helpEmbed() {
+function balanceEmbed(username, user) {
+  return new EmbedBuilder()
+    .setColor(0x22c55e)
+    .setTitle("💰 Compte de " + username)
+    .setDescription("Voici ta situation financière sur ce serveur.")
+    .addFields(
+      { name: "👛 Portefeuille", value: "**" + money(user.wallet) + "**", inline: true },
+      { name: "🏦 Banque", value: "**" + money(user.bank) + "**", inline: true },
+      { name: "📊 Total", value: "**" + money(totalBalance(user)) + "**", inline: false }
+    )
+    .setFooter({ text: "Les jeux utilisent l'argent du portefeuille" })
+    .setTimestamp();
+}
+
+function helpEmbed() {
   return new EmbedBuilder()
     .setColor(0x7c3aed)
     .setTitle("🎮 Hirosaki Game")
