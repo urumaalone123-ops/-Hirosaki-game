@@ -1,16 +1,16 @@
 const {
   Client,
-  EmbedBuilder,
   GatewayIntentBits,
   PermissionsBitField,
-  ActivityType
+  ActivityType,
+  EmbedBuilder,
+  SlashCommandBuilder
 } = require("discord.js");
 const fs = require("fs");
 const path = require("path");
 require("dotenv").config();
 
 const TOKEN = process.env.DISCORD_TOKEN;
-const PREFIX = "+";
 const DATA_FILE = path.resolve(process.env.DATA_FILE || "data/economy.json");
 const MESSAGE_COOLDOWN = 60 * 1000;
 const WORK_COOLDOWN = 45 * 1000;
@@ -18,16 +18,12 @@ const STEAL_COOLDOWN = 10 * 60 * 1000;
 const DAILY_COOLDOWN = 24 * 60 * 60 * 1000;
 
 if (!TOKEN) {
-  console.error("DISCORD_TOKEN est absent. Ajoute-le dans les secrets ou dans .env.");
+  console.error("DISCORD_TOKEN est absent. Ajoute-le dans les variables d'environnement.");
   process.exit(1);
 }
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
 });
 
 function makeDatabase() {
@@ -42,7 +38,7 @@ function loadDatabase() {
     if (!parsed.guilds) parsed.guilds = {};
     return parsed;
   } catch (error) {
-    console.error("Impossible de lire la base JSON, nouvelle base utilisée :", error.message);
+    console.error("Impossible de lire la base JSON :", error.message);
     return makeDatabase();
   }
 }
@@ -72,9 +68,7 @@ function guildData(guildId) {
 
 function userData(guildId, userId) {
   const guild = guildData(guildId);
-  if (!guild.users[userId]) {
-    guild.users[userId] = { wallet: 100, bank: 0, lastDaily: 0, lastWork: 0, lastSteal: 0 };
-  }
+  if (!guild.users[userId]) guild.users[userId] = { wallet: 100, bank: 0, lastDaily: 0, lastWork: 0, lastSteal: 0 };
   const user = guild.users[userId];
   user.wallet = Number.isFinite(user.wallet) ? Math.max(0, Math.floor(user.wallet)) : 0;
   user.bank = Number.isFinite(user.bank) ? Math.max(0, Math.floor(user.bank)) : 0;
@@ -99,11 +93,9 @@ function shuffle(items) {
 }
 
 function parseAmount(value, available) {
-  if (!value) return null;
+  if (value === undefined || value === null || value === "") return null;
   if (String(value).toLowerCase() === "all") return Math.floor(available);
-  const normalized = String(value).replace(/[, ]/g, "");
-  if (!/^\d+(?:\.\d+)?$/.test(normalized)) return null;
-  const amount = Math.floor(Number(normalized));
+  const amount = Number(String(value).replaceAll(",", ".").replaceAll(" ", ""));
   return Number.isSafeInteger(amount) && amount > 0 ? amount : null;
 }
 
@@ -114,20 +106,8 @@ function remaining(until) {
   return seconds + " s";
 }
 
-function choice(value) {
-  return String(value || "").toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
-}
-
-function memberMention(message, index) {
-  const member = message.mentions.members.first();
-  if (member) return member;
-  const raw = message.content.split(/\s+/)[index];
-  if (!raw || !/^\d{15,25}$/.test(raw)) return null;
-  return message.guild.members.cache.get(raw) || null;
-}
-
-function isAdmin(message) {
-  return message.member && message.member.permissions.has(PermissionsBitField.Flags.Administrator);
+function normalizeChoice(value) {
+  return String(value || "").toLowerCase().trim();
 }
 
 function totalBalance(user) {
@@ -135,7 +115,7 @@ function totalBalance(user) {
 }
 
 function accountLine(user) {
-  return "Portefeuille : **" + money(user.wallet) + "**\nBanque : **" + money(user.bank) + "**\nTotal : **" + money(totalBalance(user)) + "**";
+  return "Portefeuille : **" + money(user.wallet) + "**\\nBanque : **" + money(user.bank) + "**\\nTotal : **" + money(totalBalance(user)) + "**";
 }
 
 const messageCooldowns = new Map();
@@ -148,16 +128,11 @@ const workMessages = [
 ];
 
 const suits = ["♠", "♥", "♦", "♣"];
-const ranks = [
-  ["A", 11], ["2", 2], ["3", 3], ["4", 4], ["5", 5], ["6", 6],
-  ["7", 7], ["8", 8], ["9", 9], ["10", 10], ["J", 10], ["Q", 10], ["K", 10]
-];
+const ranks = [["A", 11], ["2", 2], ["3", 3], ["4", 4], ["5", 5], ["6", 6], ["7", 7], ["8", 8], ["9", 9], ["10", 10], ["J", 10], ["Q", 10], ["K", 10]];
 
 function newDeck() {
   const deck = [];
-  for (const suit of suits) {
-    for (const [rank, value] of ranks) deck.push({ suit, rank, value });
-  }
+  for (const suit of suits) for (const [rank, value] of ranks) deck.push({ suit, rank, value });
   return shuffle(deck);
 }
 
@@ -178,198 +153,187 @@ function handText(hand) {
 function blackjackText(game, revealDealer) {
   const dealer = revealDealer ? handText(game.dealer) : game.dealer[0].rank + game.dealer[0].suit + " ??";
   const dealerScore = revealDealer ? handValue(game.dealer) : "?";
-  return "**Croupier** : " + dealer + " (" + dealerScore + ")\n**Toi** : " + handText(game.player) + " (" + handValue(game.player) + ")";
-}
-
-function settleBlackjack(guildId, userId, result, message) {
-  const guild = guildData(guildId);
-  const game = guild.blackjack[userId];
-  if (!game) return;
-  const user = userData(guildId, userId);
-  let payout = 0;
-  if (result === "win") payout = game.bet * 2;
-  if (result === "tie") payout = game.bet;
-  user.wallet += payout;
-  delete guild.blackjack[userId];
-  saveDatabase();
-  const label = result === "win" ? "Tu gagnes" : result === "tie" ? "Égalité, mise remboursée" : "Tu perds";
-  message.reply(label + (payout ? " : **" + money(payout) + "**" : "."));
-}
-
-function playBlackjackStand(message) {
-  const guild = guildData(message.guild.id);
-  const game = guild.blackjack[message.author.id];
-  if (!game) return message.reply("Tu n'as pas de blackjack en cours. Lance-en un avec +blackjack <mise>.");
-  while (handValue(game.dealer) < 17) game.dealer.push(game.deck.pop());
-  const playerScore = handValue(game.player);
-  const dealerScore = handValue(game.dealer);
-  let result = "lose";
-  if (dealerScore > 21 || playerScore > dealerScore) result = "win";
-  else if (playerScore === dealerScore) result = "tie";
-  message.reply("🃏\n" + blackjackText(game, true) + "\n\n" + (result === "win" ? "Tu remportes la partie !" : result === "tie" ? "Égalité." : "Le croupier gagne."));
-  settleBlackjack(message.guild.id, message.author.id, result, message);
+  return "**Croupier** : " + dealer + " (" + dealerScore + ")\\n**Toi** : " + handText(game.player) + " (" + handValue(game.player) + ")";
 }
 
 function helpEmbed() {
   return new EmbedBuilder()
     .setColor(0x7c3aed)
     .setTitle("🎮 Hirosaki Game")
-    .setDescription("Le bot de jeu et d'économie du serveur.\nToutes les commandes commencent par +ec.")
+    .setDescription("Le bot de jeu et d'économie du serveur.\\nLes commandes sont disponibles dans le menu slash Discord.")
     .addFields(
-      { name: "💰 Économie", value: "+ec balance — voir ton argent\n+ec work — travailler\n+ec daily — récompense quotidienne\n+ec deposit <montant> — déposer\n+ec withdraw <montant> — retirer\n+ec leaderboard — classement", inline: false },
-      { name: "🎰 Jeux", value: "+ec blackjack <mise> — blackjack\n+ec hit / +ec stand — jouer au blackjack\n+ec coinflip <mise> <pile|face>\n+ec dice <mise> <1-6>\n+ec slots <mise>\n+ec roulette <mise> <rouge|noir|0-36>", inline: false },
-      { name: "🕵️ Interaction", value: "+ec steal @membre — tenter un vol", inline: false },
-      { name: "🛡️ Administration", value: "+ec addmoney @membre <montant>", inline: false }
+      { name: "💰 Économie", value: "/balance — voir ton argent\\n/work — travailler\\n/daily — récompense quotidienne\\n/deposit montant:<montant> — déposer\\n/withdraw montant:<montant> — retirer\\n/leaderboard — classement", inline: false },
+      { name: "🎰 Jeux", value: "/blackjack mise:<montant> — blackjack\\n/hit et /stand — jouer au blackjack\\n/coinflip mise:<montant> choix:<pile|face>\\n/dice mise:<montant> choix:<1-6>\\n/slots mise:<montant>\\n/roulette mise:<montant> pari:<rouge|noir|0-36>", inline: false },
+      { name: "🕵️ Interaction", value: "/steal membre:<membre> — tenter un vol", inline: false },
+      { name: "🛡️ Administration", value: "/addmoney membre:<membre> montant:<montant>", inline: false }
     )
-    .setFooter({ text: "Préfixe : +ec • Les mises sont retirées avant chaque partie" })
+    .setFooter({ text: "Les mises sont retirées avant chaque partie" })
     .setTimestamp();
 }
 
-async function handleCommand(message) {
-  const parts = message.content.slice(PREFIX.length).trim().split(/\s+/);
-  const first = choice(parts.shift());
-  const shortcut = { "help-ec": "help", "echelp": "help", "leaderboard-ec": "leaderboard", "ecleaderboard": "leaderboard" }[first];
-  const namespaced = ["ec", "eco", "economie", "casino"].includes(first);
-  if (!namespaced && !shortcut) return;
-  const command = shortcut || choice(namespaced ? parts.shift() : first);
-  if (!command) return;
-  const guildId = message.guild.id;
-  const userId = message.author.id;
+function leaderboardEmbed(guildId) {
+  const guild = guildData(guildId);
+  const rows = Object.entries(guild.users).map(([id, value]) => ({ id, total: totalBalance(value) })).sort((a, b) => b.total - a.total).slice(0, 10);
+  const embed = new EmbedBuilder()
+    .setColor(0xf59e0b)
+    .setTitle("🏆 Classement Hirosaki Game")
+    .setDescription("Les joueurs les plus riches de ce serveur")
+    .setFooter({ text: "Utilise /balance pour consulter ton compte" })
+    .setTimestamp();
+  if (!rows.length) return embed.setDescription("Le classement est encore vide. Commence avec /work !");
+  const medals = ["🥇", "🥈", "🥉"];
+  const lines = rows.map((row, index) => (medals[index] || "▫️") + " **#" + (index + 1) + "** <@" + row.id + ">\\n　💰 " + money(row.total));
+  return embed.addFields({ name: "Top 10", value: lines.join("\\n") });
+}
+
+function commandBuilders() {
+  const amountOption = option => option.setName("montant").setDescription("Montant ou all").setRequired(true);
+  return [
+    new SlashCommandBuilder().setName("help").setDescription("Afficher l'aide du bot de jeu"),
+    new SlashCommandBuilder().setName("balance").setDescription("Voir ton portefeuille et ta banque"),
+    new SlashCommandBuilder().setName("work").setDescription("Travailler pour gagner des coins"),
+    new SlashCommandBuilder().setName("daily").setDescription("Récupérer ta récompense quotidienne"),
+    new SlashCommandBuilder().setName("deposit").setDescription("Déposer des coins à la banque").addStringOption(amountOption),
+    new SlashCommandBuilder().setName("withdraw").setDescription("Retirer des coins de la banque").addStringOption(amountOption),
+    new SlashCommandBuilder().setName("leaderboard").setDescription("Afficher le classement des fortunes"),
+    new SlashCommandBuilder().setName("steal").setDescription("Tenter de voler le portefeuille d'un membre").addUserOption(option => option.setName("membre").setDescription("Membre ciblé").setRequired(true)),
+    new SlashCommandBuilder().setName("addmoney").setDescription("Ajouter des coins à un membre").setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator).addUserOption(option => option.setName("membre").setDescription("Membre à créditer").setRequired(true)).addIntegerOption(option => option.setName("montant").setDescription("Nombre de coins").setMinValue(1).setRequired(true)),
+    new SlashCommandBuilder().setName("coinflip").setDescription("Jouer à pile ou face").addIntegerOption(option => option.setName("mise").setDescription("Nombre de coins").setMinValue(1).setRequired(true)).addStringOption(option => option.setName("choix").setDescription("Ton choix").addChoices({ name: "Pile", value: "pile" }, { name: "Face", value: "face" }).setRequired(true)),
+    new SlashCommandBuilder().setName("dice").setDescription("Parier sur un résultat de dé").addIntegerOption(option => option.setName("mise").setDescription("Nombre de coins").setMinValue(1).setRequired(true)).addIntegerOption(option => option.setName("choix").setDescription("Nombre choisi").setMinValue(1).setMaxValue(6).setRequired(true)),
+    new SlashCommandBuilder().setName("slots").setDescription("Lancer la machine à sous").addIntegerOption(option => option.setName("mise").setDescription("Nombre de coins").setMinValue(1).setRequired(true)),
+    new SlashCommandBuilder().setName("roulette").setDescription("Jouer à la roulette").addIntegerOption(option => option.setName("mise").setDescription("Nombre de coins").setMinValue(1).setRequired(true)).addStringOption(option => option.setName("pari").setDescription("rouge, noir ou un nombre de 0 à 36").setRequired(true)),
+    new SlashCommandBuilder().setName("blackjack").setDescription("Commencer une partie de blackjack").addIntegerOption(option => option.setName("mise").setDescription("Nombre de coins").setMinValue(1).setRequired(true)),
+    new SlashCommandBuilder().setName("hit").setDescription("Tirer une carte au blackjack"),
+    new SlashCommandBuilder().setName("stand").setDescription("Rester au blackjack")
+  ].map(command => command.toJSON());
+}
+
+function payoutBlackjack(guildId, userId, result) {
+  const guild = guildData(guildId);
+  const game = guild.blackjack[userId];
+  if (!game) return 0;
   const user = userData(guildId, userId);
+  const payout = result === "win" ? game.bet * 2 : result === "tie" ? game.bet : 0;
+  user.wallet += payout;
+  delete guild.blackjack[userId];
+  saveDatabase();
+  return payout;
+}
 
-  if (command === "help" || command === "aide") return message.reply({ embeds: [helpEmbed()] });
+async function handleInteraction(interaction) {
+  if (!interaction.guild) return interaction.reply({ content: "Cette commande doit être utilisée sur un serveur.", ephemeral: true });
+  const guildId = interaction.guild.id;
+  const userId = interaction.user.id;
+  const user = userData(guildId, userId);
+  const command = interaction.commandName;
 
-  if (["balance", "bal", "money"].includes(command)) {
-    return message.reply("💰 **" + message.author.username + "**\n" + accountLine(user));
-  }
+  if (command === "help") return interaction.reply({ embeds: [helpEmbed()] });
+  if (command === "balance") return interaction.reply({ content: "💰 **" + interaction.user.username + "**\\n" + accountLine(user) });
 
-  if (command === "work" || command === "travail") {
+  if (command === "work") {
     const availableAt = user.lastWork + WORK_COOLDOWN;
-    if (availableAt > Date.now()) return message.reply("Tu as déjà travaillé récemment. Reviens dans **" + remaining(availableAt) + "**.");
+    if (availableAt > Date.now()) return interaction.reply({ content: "Tu as déjà travaillé récemment. Reviens dans **" + remaining(availableAt) + "**.", ephemeral: true });
     const reward = randomInt(35, 90);
     user.wallet += reward;
     user.lastWork = Date.now();
     saveDatabase();
-    return message.reply("🛠️ " + workMessages[randomInt(0, workMessages.length - 1)] + " et tu gagnes **" + money(reward) + "** !");
+    return interaction.reply({ content: "🛠️ " + workMessages[randomInt(0, workMessages.length - 1)] + " et tu gagnes **" + money(reward) + "** !" });
   }
 
-  if (command === "daily" || command === "quotidien") {
+  if (command === "daily") {
     const availableAt = user.lastDaily + DAILY_COOLDOWN;
-    if (availableAt > Date.now()) return message.reply("Ta récompense quotidienne revient dans **" + remaining(availableAt) + "**.");
+    if (availableAt > Date.now()) return interaction.reply({ content: "Ta récompense quotidienne revient dans **" + remaining(availableAt) + "**.", ephemeral: true });
     const reward = randomInt(150, 300);
     user.wallet += reward;
     user.lastDaily = Date.now();
     saveDatabase();
-    return message.reply("🎁 Tu récupères **" + money(reward) + "** pour ta récompense quotidienne !");
+    return interaction.reply({ content: "🎁 Tu récupères **" + money(reward) + "** pour ta récompense quotidienne !" });
   }
 
-  if (command === "deposit" || command === "depot") {
-    const amount = parseAmount(parts[0], user.wallet);
-    if (!amount || amount > user.wallet) return message.reply("Indique un montant valide disponible dans ton portefeuille.");
-    user.wallet -= amount;
-    user.bank += amount;
-    saveDatabase();
-    return message.reply("🏦 Tu déposes **" + money(amount) + "**.\n" + accountLine(user));
-  }
-
-  if (command === "withdraw" || command === "retrait") {
-    const amount = parseAmount(parts[0], user.bank);
-    if (!amount || amount > user.bank) return message.reply("Indique un montant valide disponible dans ta banque.");
-    user.bank -= amount;
-    user.wallet += amount;
-    saveDatabase();
-    return message.reply("🏧 Tu retires **" + money(amount) + "**.\n" + accountLine(user));
-  }
-
-  if (["leaderboard", "classement", "rich"].includes(command)) {
-    const guild = guildData(guildId);
-    const rows = Object.entries(guild.users).map(([id, value]) => ({ id, total: totalBalance(value) })).sort((a, b) => b.total - a.total).slice(0, 10);
-    const embed = new EmbedBuilder()
-      .setColor(0xf59e0b)
-      .setTitle("🏆 Classement Hirosaki Game")
-      .setDescription("Les joueurs les plus riches de ce serveur")
-      .setFooter({ text: "Utilise +ec balance pour consulter ton compte" })
-      .setTimestamp();
-    if (!rows.length) {
-      embed.setDescription("Le classement est encore vide. Commence avec +ec work !");
-      return message.reply({ embeds: [embed] });
+  if (command === "deposit" || command === "withdraw") {
+    const amount = parseAmount(interaction.options.getString("montant"), command === "deposit" ? user.wallet : user.bank);
+    if (!amount || amount > (command === "deposit" ? user.wallet : user.bank)) return interaction.reply({ content: "Indique un montant valide disponible dans ton compte.", ephemeral: true });
+    if (command === "deposit") {
+      user.wallet -= amount;
+      user.bank += amount;
+    } else {
+      user.bank -= amount;
+      user.wallet += amount;
     }
-    const medals = ["🥇", "🥈", "🥉"];
-    const lines = rows.map((row, index) => (medals[index] || "▫️") + " **#" + (index + 1) + "** <@" + row.id + ">\n　💰 " + money(row.total));
-    embed.addFields({ name: "Top 10", value: lines.join("\n") });
-    return message.reply({ embeds: [embed] });
+    saveDatabase();
+    return interaction.reply({ content: (command === "deposit" ? "🏦 Tu déposes **" : "🏧 Tu retires **") + money(amount) + "**.\\n" + accountLine(user) });
   }
 
-  if (command === "steal" || command === "vol") {
-    const target = memberMention(message, 0);
-    if (!target) return message.reply("Mentionne la personne que tu veux voler : +steal @membre.");
-    if (target.id === userId || target.user.bot) return message.reply("Tu ne peux pas voler cette personne.");
+  if (command === "leaderboard") return interaction.reply({ embeds: [leaderboardEmbed(guildId)] });
+
+  if (command === "steal") {
+    const target = interaction.options.getMember("membre");
+    if (!target || target.user.bot || target.id === userId) return interaction.reply({ content: "Tu ne peux pas voler cette personne.", ephemeral: true });
     const availableAt = user.lastSteal + STEAL_COOLDOWN;
-    if (availableAt > Date.now()) return message.reply("Ton prochain vol sera possible dans **" + remaining(availableAt) + "**.");
+    if (availableAt > Date.now()) return interaction.reply({ content: "Ton prochain vol sera possible dans **" + remaining(availableAt) + "**.", ephemeral: true });
     const victim = userData(guildId, target.id);
-    if (victim.wallet < 10) return message.reply("Cette personne n'a pas assez de coins dans son portefeuille.");
+    if (victim.wallet < 10) return interaction.reply({ content: "Cette personne n'a pas assez de coins dans son portefeuille.", ephemeral: true });
     user.lastSteal = Date.now();
     if (Math.random() < 0.45) {
       const amount = Math.max(1, Math.min(victim.wallet, randomInt(Math.ceil(victim.wallet * 0.1), Math.max(10, Math.floor(victim.wallet * 0.35)))));
       victim.wallet -= amount;
       user.wallet += amount;
       saveDatabase();
-      return message.reply("🕵️ Vol réussi ! Tu prends **" + money(amount) + "** à <@" + target.id + ">.");
+      return interaction.reply({ content: "🕵️ Vol réussi ! Tu prends **" + money(amount) + "** à <@" + target.id + ">." });
     }
     const penalty = Math.min(user.wallet, randomInt(5, 25));
     user.wallet -= penalty;
     saveDatabase();
-    return message.reply("🚨 Tu t'es fait prendre ! Tu paies **" + money(penalty) + "** d'amende.");
+    return interaction.reply({ content: "🚨 Tu t'es fait prendre ! Tu paies **" + money(penalty) + "** d'amende." });
   }
 
-  if (command === "addmoney" || command === "addcoins") {
-    if (!isAdmin(message)) return message.reply("Cette commande est réservée aux administrateurs.");
-    const target = memberMention(message, 0);
-    const amount = parseAmount(parts[1], Number.MAX_SAFE_INTEGER);
-    if (!target || !amount) return message.reply("Utilisation : +addmoney @membre <montant>.");
+  if (command === "addmoney") {
+    if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) return interaction.reply({ content: "Cette commande est réservée aux administrateurs.", ephemeral: true });
+    const target = interaction.options.getUser("membre");
+    const amount = interaction.options.getInteger("montant");
     const targetUser = userData(guildId, target.id);
     targetUser.wallet += amount;
     saveDatabase();
-    return message.reply("✅ **" + money(amount) + "** ajoutés au portefeuille de <@" + target.id + ">.");
+    return interaction.reply({ content: "✅ **" + money(amount) + "** ajoutés au portefeuille de <@" + target.id + ">." });
   }
 
-  if (["coinflip", "flip", "pileface"].includes(command)) {
-    const bet = parseAmount(parts[0], user.wallet);
-    const pick = choice(parts[1]);
-    if (!bet || bet > user.wallet || !["pile", "face"].includes(pick)) return message.reply("Utilisation : +coinflip <mise> <pile|face>.");
+  if (command === "coinflip") {
+    const bet = interaction.options.getInteger("mise");
+    const pick = normalizeChoice(interaction.options.getString("choix"));
+    if (bet > user.wallet) return interaction.reply({ content: "Tu n'as pas assez de coins dans ton portefeuille.", ephemeral: true });
     user.wallet -= bet;
     const result = Math.random() < 0.5 ? "pile" : "face";
     if (pick === result) {
       const payout = bet * 2;
       user.wallet += payout;
       saveDatabase();
-      return message.reply("🪙 C'est **" + result + "** ! Tu gagnes **" + money(payout) + "**.");
+      return interaction.reply({ content: "🪙 C'est **" + result + "** ! Tu gagnes **" + money(payout) + "**." });
     }
     saveDatabase();
-    return message.reply("🪙 C'est **" + result + "**. Tu perds ta mise de **" + money(bet) + "**.");
+    return interaction.reply({ content: "🪙 C'est **" + result + "**. Tu perds ta mise de **" + money(bet) + "**." });
   }
 
-  if (command === "dice" || command === "de") {
-    const bet = parseAmount(parts[0], user.wallet);
-    const pick = Number(parts[1]);
-    if (!bet || bet > user.wallet || !Number.isInteger(pick) || pick < 1 || pick > 6) return message.reply("Utilisation : +dice <mise> <1-6>.");
+  if (command === "dice") {
+    const bet = interaction.options.getInteger("mise");
+    const pick = interaction.options.getInteger("choix");
+    if (bet > user.wallet) return interaction.reply({ content: "Tu n'as pas assez de coins dans ton portefeuille.", ephemeral: true });
     user.wallet -= bet;
     const result = randomInt(1, 6);
     if (pick === result) {
       const payout = bet * 6;
       user.wallet += payout;
       saveDatabase();
-      return message.reply("🎲 Le dé affiche **" + result + "** ! Tu gagnes **" + money(payout) + "**.");
+      return interaction.reply({ content: "🎲 Le dé affiche **" + result + "** ! Tu gagnes **" + money(payout) + "**." });
     }
     saveDatabase();
-    return message.reply("🎲 Le dé affiche **" + result + "**. Tu perds ta mise de **" + money(bet) + "**.");
+    return interaction.reply({ content: "🎲 Le dé affiche **" + result + "**. Tu perds ta mise de **" + money(bet) + "**." });
   }
 
-  if (command === "slots" || command === "slot") {
-    const bet = parseAmount(parts[0], user.wallet);
-    if (!bet || bet > user.wallet) return message.reply("Utilisation : +slots <mise>.");
+  if (command === "slots") {
+    const bet = interaction.options.getInteger("mise");
+    if (bet > user.wallet) return interaction.reply({ content: "Tu n'as pas assez de coins dans ton portefeuille.", ephemeral: true });
     const symbols = ["🍒", "🍋", "🔔", "⭐", "💎", "7️⃣"];
-    const spin = [symbols[randomInt(0, symbols.length - 1)], symbols[randomInt(0, symbols.length - 1)], symbols[randomInt(0, symbols.length - 1)]];
+    const spin = [symbols[randomInt(0, 5)], symbols[randomInt(0, 5)], symbols[randomInt(0, 5)]];
     user.wallet -= bet;
     let multiplier = 0;
     if (spin[0] === spin[1] && spin[1] === spin[2]) multiplier = { "🍒": 5, "🍋": 6, "🔔": 8, "⭐": 10, "💎": 15, "7️⃣": 25 }[spin[0]];
@@ -377,33 +341,32 @@ async function handleCommand(message) {
     const payout = bet * multiplier;
     user.wallet += payout;
     saveDatabase();
-    if (payout) return message.reply("🎰 " + spin.join(" | ") + "\nTu remportes **" + money(payout) + "** !");
-    return message.reply("🎰 " + spin.join(" | ") + "\nPas de combinaison gagnante cette fois.");
+    return interaction.reply({ content: "🎰 " + spin.join(" | ") + "\\n" + (payout ? "Tu remportes **" + money(payout) + "** !" : "Pas de combinaison gagnante cette fois.") });
   }
 
   if (command === "roulette") {
-    const bet = parseAmount(parts[0], user.wallet);
-    const pick = choice(parts[1]);
-    const validNumber = /^\d+$/.test(pick) && Number(pick) >= 0 && Number(pick) <= 36;
-    if (!bet || bet > user.wallet || (!validNumber && !["rouge", "red", "noir", "black"].includes(pick))) return message.reply("Utilisation : +roulette <mise> <rouge|noir|0-36>.");
+    const bet = interaction.options.getInteger("mise");
+    const pick = normalizeChoice(interaction.options.getString("pari"));
+    const numberPick = Number(pick);
+    const validNumber = Number.isInteger(numberPick) && numberPick >= 0 && numberPick <= 36 && String(numberPick) === pick;
+    if (bet > user.wallet || (!validNumber && !["rouge", "noir", "red", "black"].includes(pick))) return interaction.reply({ content: "Choisis rouge, noir ou un nombre entre 0 et 36, avec une mise disponible.", ephemeral: true });
     user.wallet -= bet;
     const result = randomInt(0, 36);
     const redNumbers = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
     const color = result === 0 ? "vert" : redNumbers.includes(result) ? "rouge" : "noir";
-    const wonNumber = validNumber && Number(pick) === result;
-    const wonColor = (pick === "rouge" || pick === "red") && color === "rouge" || (pick === "noir" || pick === "black") && color === "noir";
+    const wonNumber = validNumber && numberPick === result;
+    const wonColor = ["rouge", "red"].includes(pick) && color === "rouge" || ["noir", "black"].includes(pick) && color === "noir";
     const payout = wonNumber ? bet * 36 : wonColor ? bet * 2 : 0;
     user.wallet += payout;
     saveDatabase();
-    if (payout) return message.reply("🎡 La roulette tombe sur **" + result + " (" + color + ")**. Tu gagnes **" + money(payout) + "** !");
-    return message.reply("🎡 La roulette tombe sur **" + result + " (" + color + ")**. Ta mise est perdue.");
+    return interaction.reply({ content: "🎡 La roulette tombe sur **" + result + " (" + color + ")**. " + (payout ? "Tu gagnes **" + money(payout) + "** !" : "Ta mise est perdue.") });
   }
 
-  if (command === "blackjack" || command === "bj") {
+  if (command === "blackjack") {
     const guild = guildData(guildId);
-    if (guild.blackjack[userId]) return message.reply("Tu as déjà une partie en cours. Utilise +hit ou +stand.");
-    const bet = parseAmount(parts[0], user.wallet);
-    if (!bet || bet > user.wallet) return message.reply("Utilisation : +blackjack <mise>.");
+    if (guild.blackjack[userId]) return interaction.reply({ content: "Tu as déjà une partie en cours. Utilise /hit ou /stand.", ephemeral: true });
+    const bet = interaction.options.getInteger("mise");
+    if (bet > user.wallet) return interaction.reply({ content: "Tu n'as pas assez de coins dans ton portefeuille.", ephemeral: true });
     user.wallet -= bet;
     const game = { bet, deck: newDeck(), player: [], dealer: [] };
     game.player.push(game.deck.pop(), game.deck.pop());
@@ -416,65 +379,82 @@ async function handleCommand(message) {
       user.wallet += payout;
       delete guild.blackjack[userId];
       saveDatabase();
-      return message.reply("🃏\n" + blackjackText(game, true) + "\nBlackjack naturel ! Tu gagnes **" + money(payout) + "**.");
+      return interaction.reply({ content: "🃏\\n" + blackjackText(game, true) + "\\nBlackjack naturel ! Tu gagnes **" + money(payout) + "**." });
     }
     if (dealerScore === 21) {
       delete guild.blackjack[userId];
       saveDatabase();
-      return message.reply("🃏\n" + blackjackText(game, true) + "\nLe croupier a un blackjack. Tu perds ta mise.");
+      return interaction.reply({ content: "🃏\\n" + blackjackText(game, true) + "\\nLe croupier a un blackjack. Tu perds ta mise." });
     }
     saveDatabase();
-    return message.reply("🃏\n" + blackjackText(game, false) + "\nUtilise +hit pour tirer ou +stand pour rester.");
+    return interaction.reply({ content: "🃏\\n" + blackjackText(game, false) + "\\nUtilise /hit pour tirer ou /stand pour rester." });
   }
 
-  if (command === "hit" || command === "tirer") {
+  if (command === "hit") {
     const guild = guildData(guildId);
     const game = guild.blackjack[userId];
-    if (!game) return message.reply("Tu n'as pas de blackjack en cours. Lance-en un avec +blackjack <mise>.");
+    if (!game) return interaction.reply({ content: "Tu n'as pas de blackjack en cours. Lance /blackjack.", ephemeral: true });
     game.player.push(game.deck.pop());
     const score = handValue(game.player);
     if (score > 21) {
       delete guild.blackjack[userId];
       saveDatabase();
-      return message.reply("🃏\n" + blackjackText(game, true) + "\nTu dépasses 21. Partie perdue.");
+      return interaction.reply({ content: "🃏\\n" + blackjackText(game, true) + "\\nTu dépasses 21. Partie perdue." });
     }
     saveDatabase();
-    return message.reply("🃏\n" + blackjackText(game, false) + "\n+hit ou +stand ?");
+    return interaction.reply({ content: "🃏\\n" + blackjackText(game, false) + "\\n/hit ou /stand ?" });
   }
 
-  if (command === "stand" || command === "rester") return playBlackjackStand(message);
-
-  return message.reply("Commande inconnue. Utilise +help pour voir les commandes.");
+  if (command === "stand") {
+    const guild = guildData(guildId);
+    const game = guild.blackjack[userId];
+    if (!game) return interaction.reply({ content: "Tu n'as pas de blackjack en cours. Lance /blackjack.", ephemeral: true });
+    while (handValue(game.dealer) < 17) game.dealer.push(game.deck.pop());
+    const playerScore = handValue(game.player);
+    const dealerScore = handValue(game.dealer);
+    const result = dealerScore > 21 || playerScore > dealerScore ? "win" : playerScore === dealerScore ? "tie" : "lose";
+    const message = "🃏\\n" + blackjackText(game, true) + "\\n\\n" + (result === "win" ? "Tu remportes la partie !" : result === "tie" ? "Égalité." : "Le croupier gagne.");
+    const payout = payoutBlackjack(guildId, userId, result);
+    return interaction.reply({ content: message + (payout ? "\\nGain : **" + money(payout) + "**." : "") });
+  }
 }
 
-client.on("messageCreate", async message => {
+client.on("messageCreate", message => {
   if (!message.guild || message.author.bot) return;
   const user = userData(message.guild.id, message.author.id);
-
-  if (!message.content.startsWith(PREFIX)) {
-    const key = message.guild.id + ":" + message.author.id;
-    const lastReward = messageCooldowns.get(key) || 0;
-    if (Date.now() - lastReward >= MESSAGE_COOLDOWN) {
-      const reward = randomInt(2, 8);
-      user.wallet += reward;
-      messageCooldowns.set(key, Date.now());
-      saveDatabase();
-    }
-    return;
-  }
-
-  try {
-    await handleCommand(message);
-  } catch (error) {
-    console.error("Erreur de commande :", error);
-    await message.reply("Une erreur est survenue pendant l'exécution de la commande.");
+  const key = message.guild.id + ":" + message.author.id;
+  const lastReward = messageCooldowns.get(key) || 0;
+  if (Date.now() - lastReward >= MESSAGE_COOLDOWN) {
+    user.wallet += randomInt(2, 8);
+    messageCooldowns.set(key, Date.now());
+    saveDatabase();
   }
 });
 
-client.once("clientReady", () => {
-  console.log("✅ " + client.user.tag + " est connecté sur " + client.guilds.cache.size + " serveur(s).");
-  console.log("Préfixe : " + PREFIX + " | Données : " + DATA_FILE);
-  client.user.setActivity(PREFIX + "help", { type: ActivityType.Listening });
+client.on("interactionCreate", async interaction => {
+  if (!interaction.isChatInputCommand()) return;
+  try {
+    await handleInteraction(interaction);
+  } catch (error) {
+    console.error("Erreur de commande slash :", error);
+    const response = { content: "Une erreur est survenue pendant l'exécution de la commande.", ephemeral: true };
+    if (interaction.replied || interaction.deferred) await interaction.followUp(response);
+    else await interaction.reply(response);
+  }
+});
+
+client.once("clientReady", async () => {
+  try {
+    const commands = commandBuilders();
+    if (process.env.GUILD_ID) await client.application.commands.set(commands, process.env.GUILD_ID);
+    else await client.application.commands.set(commands);
+    console.log("✅ " + client.user.tag + " est connecté sur " + client.guilds.cache.size + " serveur(s).");
+    console.log("✅ " + commands.length + " commandes slash enregistrées.");
+    console.log("Préfixe : aucun — commandes slash Discord");
+    client.user.setActivity("les commandes slash", { type: ActivityType.Listening });
+  } catch (error) {
+    console.error("Impossible d'enregistrer les commandes slash :", error.message);
+  }
 });
 
 async function shutdown(signal) {
