@@ -36,6 +36,6 @@ Le stock vide ou `illimite` signifie illimité. Un rôle associé est automatiqu
 
 `/help`, `/balance`, `/work`, `/daily`, `/deposit`, `/withdraw`, `/leaderboard`, `/steal` et `/addmoney`.
 
-## Données et déploiement
+## Règles des jeux\n\nLa commande `/rules jeu:<jeu>` affiche les règles détaillées et les gains possibles pour chaque jeu.\n\nDes raccourcis sont également disponibles : `/blackjack-rules`, `/craps-rules`, `/coinflip-rules`, `/dice-rules`, `/slots-rules`, `/roulette-rules`, `/rps-rules` et `/higherlower-rules`.\n## Données et déploiement
 
 Les données sont sauvegardées dans `data/economy.json`. Pour une économie durable, utiliser un volume persistant ou PostgreSQL. Ne commite jamais le vrai token Discord.
